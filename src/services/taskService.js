@@ -81,6 +81,24 @@ export const getTasksByEmployee = async (uid) => {
   return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+/* =====================
+   GET EMPLOYEES (ADMIN)
+===================== */
+export const getEmployeesByOrganization = async (organizationId) => {
+  const q = query(
+    collection(db, "users"),
+    where("organizationId", "==", organizationId),
+    where("role", "==", "employee")
+  );
+
+  const snap = await getDocs(q);
+  return snap.docs.map(doc => ({
+    uid: doc.id,
+    ...doc.data()
+  }));
+};
+
+
 
 
 

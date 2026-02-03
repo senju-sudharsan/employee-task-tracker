@@ -17,8 +17,11 @@ import TasksPage from "./pages/TasksPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
 
+import OrganizationsPage from "./pages/OrganizationsPage";
+import UsersPage from "./pages/UsersPage";
+
 /* ===========================
-   ROLE NORMALIZER (IMPORTANT)
+   ROLE NORMALIZER
 =========================== */
 function normalizeRole(rawRole) {
   if (!rawRole) return null;
@@ -52,14 +55,14 @@ function App() {
       }
 
       const profile = await getUserProfile(firebaseUser.uid);
-
       const normalizedRole = normalizeRole(profile.role);
 
-      setUser({
+      const fullUser = {
         uid: firebaseUser.uid,
         ...profile
-      });
+      };
 
+      setUser(fullUser);
       setRole(normalizedRole);
 
       const allTasks = await getAllTasks();
@@ -90,7 +93,7 @@ function App() {
   }
 
   /* ===========================
-     DASHBOARD SWITCH
+     DASHBOARD SWITCH (FIXED)
   =========================== */
   const DashboardByRole = () => {
     if (role === "super_admin") {
@@ -98,11 +101,19 @@ function App() {
     }
 
     if (role === "admin") {
-      return <AdminDashboard user={user} />;
+      return (
+        <AdminDashboard
+          organizationId={user.organizationId}
+          adminUid={user.uid}
+        />
+      );
     }
 
     if (role === "employee") {
-      const myTasks = tasks.filter(t => t.assignedTo === user.uid);
+      const myTasks = tasks.filter(
+        (t) => t.assignedTo === user.uid
+      );
+
       return (
         <EmployeeDashboard
           tasks={myTasks}
@@ -133,6 +144,9 @@ function App() {
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/organizations" element={<OrganizationsPage />} />
+        <Route path="/users" element={<UsersPage />} />
+
       </Routes>
     </Layout>
   );
