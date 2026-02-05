@@ -1,91 +1,171 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   getTasksByOrganization,
   createTask,
   getEmployeesByOrganization
 } from "../services/taskService";
+import { getAllOrganizations } from "../services/organizationService";
 import { auth } from "../firebase";
 import { getUserProfile } from "../services/authService";
 
+/* ===========================
+   OVERDUE CHECK
+=========================== */
+const isTaskOverdue = (task) => {
+  if (!task.deadline || task.status === "Done") return false;
+
+  const d =
+    typeof task.deadline.toDate === "function"
+      ? task.deadline.toDate()
+      : new Date(task.deadline);
+
+  return d < new Date();
+};
+
 function TasksPage() {
+  const location = useLocation();
+  const filter = new URLSearchParams(location.search).get("filter") || "all";
+
+  const [profile, setProfile] = useState(null);
+
+  const [organizations, setOrganizations] = useState([]);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
+
   const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
+  const [deadline, setDeadline] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-
-    const profile = await getUserProfile(auth.currentUser.uid);
-    const orgId = profile.organizationId;
-
-    const [taskData, employeeData] = await Promise.all([
-      getTasksByOrganization(orgId),
-      getEmployeesByOrganization(orgId)
-    ]);
-
-    setTasks(taskData || []);
-    setEmployees(employeeData || []);
-    setLoading(false);
-  };
-
+  /* ===========================
+     BOOTSTRAP USER
+  =========================== */
   useEffect(() => {
-    load();
+    const init = async () => {
+      const p = await getUserProfile(auth.currentUser.uid);
+      setProfile(p);
+
+      if (p.role === "super_admin") {
+        const orgs = await getAllOrganizations();
+        setOrganizations(orgs || []);
+      } else {
+        setSelectedOrgId(p.organizationId);
+      }
+
+      setLoading(false);
+    };
+
+    init();
   }, []);
 
+  /* ===========================
+     LOAD TASKS (ORG-BASED)
+  =========================== */
+  useEffect(() => {
+    if (!selectedOrgId) return;
+
+    const load = async () => {
+      setLoading(true);
+
+      const [taskData, employeeData] = await Promise.all([
+        getTasksByOrganization(selectedOrgId),
+        getEmployeesByOrganization(selectedOrgId)
+      ]);
+
+      setTasks(taskData || []);
+      setEmployees(employeeData || []);
+      setLoading(false);
+    };
+
+    load();
+  }, [selectedOrgId]);
+
+  /* ===========================
+     CREATE TASK
+  =========================== */
   const handleCreate = async () => {
-    if (!title || !assignedTo) return;
+    if (!title || !assignedTo || !selectedOrgId) {
+      alert("All fields required");
+      return;
+    }
 
     setCreating(true);
 
-    const profile = await getUserProfile(auth.currentUser.uid);
-
     await createTask({
       title,
-      organizationId: profile.organizationId,
+      description,
       assignedTo,
-      description
+      organizationId: selectedOrgId,
+      deadline: deadline ? new Date(deadline) : null
     });
 
     setTitle("");
     setDescription("");
     setAssignedTo("");
+    setDeadline("");
 
-    await load();
+    const refreshed = await getTasksByOrganization(selectedOrgId);
+    setTasks(refreshed || []);
     setCreating(false);
   };
 
+  /* ===========================
+     FILTER TASKS
+  =========================== */
+  const visibleTasks = tasks.filter((t) => {
+    if (filter === "completed") return t.status === "Done";
+    if (filter === "pending") return t.status !== "Done";
+    if (filter === "overdue") return isTaskOverdue(t);
+    return true;
+  });
+
+  if (!profile) return <p>Loading…</p>;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
-      {/* HEADER */}
-      <div>
-        <h1 style={styles.pageTitle}>Tasks</h1>
-        <p style={styles.pageSubtitle}>
-          Track and manage tasks across your organization
+    <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+      <h1>Tasks</h1>
+
+      {/* SUPER ADMIN ORG SELECT */}
+      {profile.role === "super_admin" && (
+        <select
+          value={selectedOrgId || ""}
+          onChange={(e) => setSelectedOrgId(e.target.value)}
+        >
+          <option value="">Select organization</option>
+          {organizations.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {!selectedOrgId && profile.role === "super_admin" && (
+        <p style={{ color: "#64748B" }}>
+          Select an organization to view tasks
         </p>
-      </div>
+      )}
 
       {/* CREATE TASK */}
-      <div style={styles.createCard}>
-        <h3 style={styles.cardTitle}>Create Task</h3>
+      {selectedOrgId && (
+        <div>
+          <h3>Create Task</h3>
 
-        <div style={styles.createGrid}>
           <input
-            placeholder="Task title"
+            placeholder="Title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            style={styles.input}
           />
 
           <select
             value={assignedTo}
             onChange={(e) => setAssignedTo(e.target.value)}
-            style={styles.input}
           >
             <option value="">Assign to employee</option>
             {employees.map((e) => (
@@ -95,185 +175,38 @@ function TasksPage() {
             ))}
           </select>
 
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            style={{ ...styles.input, gridColumn: "1 / -1", height: 80 }}
+          <input
+            type="datetime-local"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
           />
 
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            style={styles.primaryBtn}
-          >
-            {creating ? "Creating..." : "Create Task"}
+          <textarea
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <button onClick={handleCreate} disabled={creating}>
+            {creating ? "Creating…" : "Create Task"}
           </button>
         </div>
-      </div>
+      )}
 
       {/* TASK LIST */}
       {loading ? (
-        <p style={styles.muted}>Loading tasks…</p>
-      ) : tasks.length === 0 ? (
-        <p style={styles.muted}>No tasks found.</p>
+        <p>Loading tasks…</p>
+      ) : visibleTasks.length === 0 ? (
+        <p>No tasks found.</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          {tasks.map((task) => {
-            const s = getStatusStyle(task.status, task.delayed);
-
-            return (
-              <div
-                key={task.id}
-                style={{
-                  ...styles.taskCard,
-                  backgroundColor: s.bg,
-                  borderLeft: `4px solid ${s.border}`
-                }}
-              >
-                <div style={styles.taskTop}>
-                  <h3 style={styles.taskTitle}>{task.title}</h3>
-
-                  <span
-                    style={{
-                      ...styles.statusPill,
-                      backgroundColor: s.pillBg,
-                      color: s.pillColor
-                    }}
-                  >
-                    {s.label}
-                  </span>
-                </div>
-
-                <p style={styles.assigned}>
-                  Assigned to <strong>{task.assignedTo}</strong>
-                </p>
-
-                {task.description && (
-                  <p style={styles.description}>{task.description}</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        visibleTasks.map((t) => (
+          <div key={t.id}>
+            <strong>{t.title}</strong> — {t.status}
+          </div>
+        ))
       )}
     </div>
   );
 }
-
-/* ===========================
-   STATUS MAP
-=========================== */
-
-function getStatusStyle(status, delayed) {
-  if (delayed) {
-    return {
-      label: "Delayed",
-      bg: "#FEF2F2",
-      border: "#DC2626",
-      pillBg: "#FEE2E2",
-      pillColor: "#991B1B"
-    };
-  }
-
-  if (status === "Done") {
-    return {
-      label: "Done",
-      bg: "#ECFDF5",
-      border: "#22C55E",
-      pillBg: "#DCFCE7",
-      pillColor: "#166534"
-    };
-  }
-
-  if (status === "In Progress") {
-    return {
-      label: "In Progress",
-      bg: "#EFF6FF",
-      border: "#3B82F6",
-      pillBg: "#DBEAFE",
-      pillColor: "#1E40AF"
-    };
-  }
-
-  return {
-    label: "To Do",
-    bg: "#FFFBEB",
-    border: "#F59E0B",
-    pillBg: "#FEF3C7",
-    pillColor: "#92400E"
-  };
-}
-
-/* ===========================
-   STYLES (Claude-aligned)
-=========================== */
-
-const styles = {
-  pageTitle: { fontSize: "28px", fontWeight: 700, color: "#1E293B" },
-  pageSubtitle: { fontSize: "15px", color: "#64748B" },
-  muted: { fontSize: "14px", color: "#64748B" },
-
-  createCard: {
-    background: "#FFFFFF",
-    border: "1px dashed #CBD5E1",
-    borderRadius: "16px",
-    padding: "24px"
-  },
-  cardTitle: { fontSize: "18px", fontWeight: 600, marginBottom: "12px" },
-  createGrid: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr",
-    gap: "12px"
-  },
-  input: {
-    padding: "12px 14px",
-    borderRadius: "10px",
-    border: "1px solid #E2E8F0",
-    backgroundColor: "#F8FAFC",
-    fontSize: "14px"
-  },
-  primaryBtn: {
-    gridColumn: "1 / -1",
-    background: "#16A6B0",
-    color: "#FFF",
-    border: "none",
-    borderRadius: "10px",
-    fontWeight: 600,
-    padding: "12px",
-    cursor: "pointer"
-  },
-
-  taskCard: {
-    borderRadius: "16px",
-    padding: "18px",
-    border: "1px solid #E2E8F0"
-  },
-  taskTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px"
-  },
-  taskTitle: { fontSize: "16px", fontWeight: 600 },
-  assigned: {
-    fontSize: "14px",
-    color: "#475569",
-    marginTop: "4px"
-  },
-  description: {
-    fontSize: "14px",
-    color: "#475569",
-    marginTop: "6px",
-    lineHeight: 1.5
-  },
-  statusPill: {
-    padding: "6px 12px",
-    borderRadius: "999px",
-    fontSize: "12px",
-    fontWeight: 600,
-    whiteSpace: "nowrap"
-  }
-};
 
 export default TasksPage;

@@ -110,7 +110,7 @@ function App() {
     return <LoginPage />;
   }
 
-  // 🚨 BLOCK ONLY ADMIN + EMPLOYEE WHEN ORG DISABLED
+  // BLOCK ONLY ADMIN + EMPLOYEE WHEN ORG DISABLED
   if (
     role !== "super_admin" &&
     user.organizationId &&
@@ -166,17 +166,17 @@ function App() {
         />
 
         {/* SUPER ADMIN */}
+
         {role === "super_admin" && (
-          <>
-            <Route path="/organizations" element={<OrganizationsPage />} />
-            <Route
-              path="/users"
-              element={
-                <UsersPage organizationId={null} />
-              }
-            />
-          </>
-        )}
+  <>
+    <Route path="/tasks" element={<TasksPage />} />
+    <Route path="/organizations" element={<OrganizationsPage />} />
+    <Route path="/users" element={<UsersPage organizationId={null} />} />
+  </>
+)}
+
+
+
 
         {/* ADMIN */}
         {role === "admin" && (

@@ -1,9 +1,13 @@
+import { useNavigate } from "react-router-dom";
+
 /* ===========================
    ADMIN DASHBOARD
    Analytics & overview ONLY
 =========================== */
 
 function AdminDashboard({ organizationId }) {
+  const navigate = useNavigate();
+
   // TEMP: derived values (logic wiring later)
   const metrics = {
     total: 12,
@@ -29,24 +33,28 @@ function AdminDashboard({ organizationId }) {
           value={metrics.total}
           bg="#ECFEFF"
           color="#0F766E"
+          onClick={() => navigate("/tasks?filter=all")}
         />
         <MetricCard
           title="Pending"
           value={metrics.pending}
           bg="#FFFBEB"
           color="#92400E"
+          onClick={() => navigate("/tasks?filter=pending")}
         />
         <MetricCard
           title="Completed"
           value={metrics.completed}
           bg="#ECFDF5"
           color="#166534"
+          onClick={() => navigate("/tasks?filter=completed")}
         />
         <MetricCard
           title="Delayed"
           value={metrics.delayed}
           bg="#FEF2F2"
           color="#991B1B"
+          onClick={() => navigate("/tasks?filter=overdue")}
         />
       </div>
 
@@ -93,16 +101,18 @@ function AdminDashboard({ organizationId }) {
    SMALL COMPONENTS
 =========================== */
 
-function MetricCard({ title, value, bg, color }) {
+function MetricCard({ title, value, bg, color, onClick }) {
   return (
     <div
+      onClick={onClick}
       style={{
         backgroundColor: bg,
         borderRadius: "20px",
         padding: "28px",
         display: "flex",
         flexDirection: "column",
-        gap: "10px"
+        gap: "10px",
+        cursor: "pointer"
       }}
     >
       <p style={{ fontSize: "14px", color: "#475569" }}>{title}</p>

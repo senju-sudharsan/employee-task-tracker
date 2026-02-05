@@ -11,3 +11,11 @@ dist/
 build/
 
 .DS_Store
+
+# 🔐 Firebase / Secrets
+serviceAccountKey.json
+
+
+# Firebase config backups
+firebase-debug.log
+firestore-debug.log

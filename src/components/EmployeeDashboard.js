@@ -4,13 +4,12 @@ import {
   getTasksByEmployee,
   updateTaskStatus,
   acknowledgeTask,
-  markTaskDelayed
 } from "../services/taskService";
 
 /**
  * EMPLOYEE DASHBOARD
  * Tasks = dashboard
- * Claude-style, lifecycle-colored cards
+ * Deadline-driven (no delayed flag)
  * UI LOCKED
  */
 
@@ -33,11 +32,26 @@ function EmployeeDashboard() {
   };
 
   /* ===========================
+     OVERDUE LOGIC (DERIVED)
+  =========================== */
+  const isTaskOverdue = (task) => {
+    if (!task.deadline) return false;
+    if (task.status === "Done") return false;
+
+    const deadline =
+      typeof task.deadline.toDate === "function"
+        ? task.deadline.toDate()
+        : new Date(task.deadline);
+
+    return deadline < new Date();
+  };
+
+  /* ===========================
      METRICS
   =========================== */
   const total = tasks.length;
   const active = tasks.filter(t => t.status !== "Done").length;
-  const overdue = tasks.filter(t => t.delayed).length;
+  const overdue = tasks.filter(isTaskOverdue).length;
 
   /* ===========================
      SORTING
@@ -101,7 +115,7 @@ function EmployeeDashboard() {
         </select>
       </div>
 
-      {/* TASK SECTION (FIXED WHITE BOX ISSUE) */}
+      {/* TASK LIST */}
       <div
         style={{
           padding: "28px",
@@ -118,10 +132,12 @@ function EmployeeDashboard() {
         )}
 
         {sortedTasks.map(task => {
+          const overdue = isTaskOverdue(task);
+
           const bg =
             task.status === "Done"
               ? "#ECFDF5"
-              : task.delayed
+              : overdue
               ? "#FEF2F2"
               : "#FFFBEB";
 
@@ -138,15 +154,11 @@ function EmployeeDashboard() {
                 <PriorityPill level={task.priority || "medium"} />
               </div>
 
-              <p style={styles.assigned}>
-                Assigned by admin
-              </p>
+              <p style={styles.assigned}>Assigned by admin</p>
 
               <div style={styles.meta}>
                 <StatusPill status={task.status} />
-                {task.delayed && (
-                  <span style={styles.overdue}>Overdue</span>
-                )}
+                {overdue && <span style={styles.overdue}>Overdue</span>}
               </div>
 
               <div style={styles.actions}>
@@ -169,16 +181,6 @@ function EmployeeDashboard() {
                     style={styles.primaryBtn}
                   >
                     Complete
-                  </button>
-                )}
-
-                {!task.delayed && task.status !== "Done" && (
-                  <button
-                    disabled={savingId === task.id}
-                    onClick={() => act(markTaskDelayed, task.id)}
-                    style={styles.warningBtn}
-                  >
-                    Mark Delayed
                   </button>
                 )}
               </div>
@@ -309,14 +311,6 @@ const styles = {
   secondaryBtn: {
     background: "#E0F2FE",
     color: "#0369A1",
-    border: "none",
-    borderRadius: "10px",
-    padding: "10px 14px",
-    fontWeight: 600
-  },
-  warningBtn: {
-    background: "#FEF3C7",
-    color: "#92400E",
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",

@@ -2,41 +2,60 @@ import { useEffect, useState } from "react";
 import { auth } from "../firebase";
 import { getAllUsers, createEmployee } from "../services/userService";
 import { getUserProfile } from "../services/authService";
+import { ROLES, roleCapabilities } from "../config/roles";
+import { getAllOrganizations } from "../services/organizationService";
 
 function UsersPage() {
   const [users, setUsers] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const [adminOrgId, setAdminOrgId] = useState(null);
-
   /* ===========================
-     LOAD USERS + ADMIN ORG
+     BOOTSTRAP
   =========================== */
   useEffect(() => {
     const bootstrap = async () => {
       if (!auth.currentUser) return;
 
-      const profile = await getUserProfile(auth.currentUser.uid);
+      const userProfile = await getUserProfile(auth.currentUser.uid);
+      setProfile(userProfile);
 
-      if (profile.role !== "admin") {
-        alert("Only admins can access this page");
+      const role = userProfile.role;
+
+      // 🔐 ACCESS GATE (FINAL, CORRECT)
+      if (!roleCapabilities[role]?.canManageUsers) {
+        alert("Access denied");
+        setLoading(false);
         return;
       }
 
-      if (!profile.organizationId) {
-        alert("Admin has no organization assigned");
-        return;
+      // 🟣 SUPER ADMIN → select org
+      if (role === ROLES.SUPERADMIN) {
+        const orgs = await getAllOrganizations();
+        setOrganizations(orgs || []);
       }
 
-      setAdminOrgId(profile.organizationId);
+      // 🔵 ADMIN → forced org
+      if (role === ROLES.ADMIN) {
+        if (!userProfile.organizationId) {
+          alert("Admin has no organization assigned");
+          setLoading(false);
+          return;
+        }
+        setSelectedOrgId(userProfile.organizationId);
+      }
 
-      const data = await getAllUsers();
-      setUsers(data || []);
+      const allUsers = await getAllUsers();
+      setUsers(allUsers || []);
       setLoading(false);
     };
 
@@ -47,7 +66,7 @@ function UsersPage() {
      CREATE EMPLOYEE
   =========================== */
   const handleCreate = async () => {
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !selectedOrgId) {
       alert("All fields are required");
       return;
     }
@@ -59,7 +78,7 @@ function UsersPage() {
         name,
         email,
         password,
-        organizationId: adminOrgId, // 🔒 AUTO ASSIGNED
+        organizationId: selectedOrgId,
         createdBy: auth.currentUser.uid
       });
 
@@ -67,64 +86,91 @@ function UsersPage() {
       setEmail("");
       setPassword("");
 
-      const data = await getAllUsers();
-      setUsers(data || []);
+      const updated = await getAllUsers();
+      setUsers(updated || []);
     } catch (err) {
-      console.error(err);
       alert(err.message);
     }
 
     setCreating(false);
   };
 
+  /* ===========================
+     FILTER USERS BY ORG
+  =========================== */
+  const visibleUsers = selectedOrgId
+    ? users.filter(u => u.organizationId === selectedOrgId)
+    : [];
+
+  if (loading) return <p>Loading...</p>;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       <h1>Employees</h1>
+
+      {/* SUPER ADMIN ORG SELECT */}
+      {profile?.role === ROLES.SUPERADMIN && (
+        <select
+          value={selectedOrgId || ""}
+          onChange={e => setSelectedOrgId(e.target.value)}
+        >
+          <option value="">Select Organization</option>
+          {organizations.map(org => (
+            <option key={org.id} value={org.id}>
+              {org.name}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {/* SUPER ADMIN EMPTY STATE */}
+      {profile?.role === ROLES.SUPERADMIN && !selectedOrgId && (
+        <p style={{ color: "#666" }}>
+          Select an organization to view and manage employees.
+        </p>
+      )}
 
       {/* USERS LIST */}
       <div>
-        {loading && <p>Loading...</p>}
-
-        {!loading &&
-          users
-            .filter(u => u.organizationId === adminOrgId)
-            .map(u => (
-              <div key={u.id} style={{ padding: "8px 0" }}>
-                <strong>{u.name}</strong> — {u.email}
-              </div>
-            ))}
+        {visibleUsers.map(u => (
+          <div key={u.id} style={{ padding: "6px 0" }}>
+            <strong>{u.name}</strong> — {u.email}
+          </div>
+        ))}
       </div>
 
       {/* CREATE EMPLOYEE */}
-      <div style={{ borderTop: "1px solid #eee", paddingTop: "24px" }}>
-        <h3>Create Employee</h3>
+      {selectedOrgId && (
+        <div style={{ borderTop: "1px solid #eee", paddingTop: "24px" }}>
+          <h3>Create Employee</h3>
 
-        <input
-          placeholder="Name"
-          value={name}
-          onChange={e => setName(e.target.value)}
-        />
-        <br />
+          <input
+            placeholder="Name"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <br />
 
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-        />
-        <br />
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+          />
+          <br />
 
-        <input
-          type="password"
-          placeholder="Temporary Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-        />
-        <br />
+          <input
+            type="password"
+            placeholder="Temporary Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+          />
+          <br />
 
-        <button onClick={handleCreate} disabled={creating}>
-          {creating ? "Creating..." : "Create Employee"}
-        </button>
-      </div>
+          <button onClick={handleCreate} disabled={creating}>
+            {creating ? "Creating..." : "Create Employee"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
