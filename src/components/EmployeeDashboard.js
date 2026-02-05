@@ -8,22 +8,22 @@ import {
 } from "../services/taskService";
 
 /**
- * Employee Dashboard
- * - Shows employee-assigned tasks only
- * - Employee lifecycle actions:
- *   - Acknowledge
- *   - Mark Complete
- *   - Mark Delayed
- * - Claude-style UI
+ * EMPLOYEE DASHBOARD
+ * Tasks = dashboard
+ * Claude-style, lifecycle-colored cards
+ * UI LOCKED
  */
+
 function EmployeeDashboard() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [savingTaskId, setSavingTaskId] = useState(null);
+  const [sortBy, setSortBy] = useState("active");
+  const [savingId, setSavingId] = useState(null);
 
-  /* ===========================
-     LOAD TASKS
-  =========================== */
+  useEffect(() => {
+    loadTasks();
+  }, []);
+
   const loadTasks = async () => {
     if (!auth.currentUser) return;
     setLoading(true);
@@ -32,37 +32,41 @@ function EmployeeDashboard() {
     setLoading(false);
   };
 
-  useEffect(() => {
-    loadTasks();
-  }, []);
+  /* ===========================
+     METRICS
+  =========================== */
+  const total = tasks.length;
+  const active = tasks.filter(t => t.status !== "Done").length;
+  const overdue = tasks.filter(t => t.delayed).length;
 
   /* ===========================
-     ACTIONS
+     SORTING
   =========================== */
-  const handleAcknowledge = async (taskId) => {
-    setSavingTaskId(taskId);
-    await acknowledgeTask(taskId);
-    await loadTasks();
-    setSavingTaskId(null);
-  };
+  const priorityRank = { high: 1, medium: 2, low: 3 };
 
-  const handleComplete = async (taskId) => {
-    setSavingTaskId(taskId);
-    await updateTaskStatus(taskId, "Done");
-    await loadTasks();
-    setSavingTaskId(null);
-  };
-
-  const handleDelayed = async (taskId) => {
-    setSavingTaskId(taskId);
-    await markTaskDelayed(taskId);
-    await loadTasks();
-    setSavingTaskId(null);
-  };
+  const sortedTasks = [...tasks].sort((a, b) => {
+    if (sortBy === "priority") {
+      return (
+        (priorityRank[a.priority || "medium"] || 2) -
+        (priorityRank[b.priority || "medium"] || 2)
+      );
+    }
+    if (sortBy === "status") {
+      return a.status.localeCompare(b.status);
+    }
+    return a.status === "Done" ? 1 : -1;
+  });
 
   /* ===========================
-     RENDER
+     ACTION HANDLER
   =========================== */
+  const act = async (fn, id) => {
+    setSavingId(id);
+    await fn(id);
+    await loadTasks();
+    setSavingId(null);
+  };
+
   if (loading) {
     return <p style={{ color: "#64748B" }}>Loading your tasks…</p>;
   }
@@ -71,50 +75,85 @@ function EmployeeDashboard() {
     <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
       {/* HEADER */}
       <div>
-        <h1 style={styles.pageTitle}>My Tasks</h1>
-        <p style={styles.pageSubtitle}>
-          Tasks assigned to you and their current status
+        <h1 style={styles.title}>My Work</h1>
+        <p style={styles.subtitle}>
+          An overview of your assigned tasks
         </p>
       </div>
 
-      {tasks.length === 0 && (
-        <p style={styles.muted}>No tasks assigned to you.</p>
-      )}
+      {/* STATS */}
+      <div style={styles.statsGrid}>
+        <StatCard label="Total" value={total} />
+        <StatCard label="Active" value={active} variant="active" />
+        <StatCard label="Overdue" value={overdue} variant="overdue" />
+      </div>
 
-      {/* TASK LIST */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-        {tasks.map((task) => {
-          const completedLate =
-            task.status === "Done" && task.delayed === true;
+      {/* SORT */}
+      <div style={styles.controls}>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          style={styles.select}
+        >
+          <option value="active">Active first</option>
+          <option value="priority">Priority</option>
+          <option value="status">Status</option>
+        </select>
+      </div>
+
+      {/* TASK SECTION (FIXED WHITE BOX ISSUE) */}
+      <div
+        style={{
+          padding: "28px",
+          borderRadius: "20px",
+          background: "#FEFCF8",
+          border: "1px solid #EAE7E2",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px"
+        }}
+      >
+        {sortedTasks.length === 0 && (
+          <p style={styles.muted}>No tasks assigned.</p>
+        )}
+
+        {sortedTasks.map(task => {
+          const bg =
+            task.status === "Done"
+              ? "#ECFDF5"
+              : task.delayed
+              ? "#FEF2F2"
+              : "#FFFBEB";
 
           return (
-            <div key={task.id} style={styles.taskCard}>
-              {/* TITLE + STATUS */}
+            <div
+              key={task.id}
+              style={{
+                ...styles.taskCard,
+                backgroundColor: bg
+              }}
+            >
               <div style={styles.taskHeader}>
                 <h3 style={styles.taskTitle}>{task.title}</h3>
-                <StatusPill
-                  status={
-                    completedLate ? "Completed Late" : task.status
-                  }
-                />
+                <PriorityPill level={task.priority || "medium"} />
               </div>
 
-              {/* FLAGS */}
-              <div style={styles.flags}>
-                {task.acknowledged && (
-                  <span style={styles.acknowledged}>Acknowledged</span>
-                )}
+              <p style={styles.assigned}>
+                Assigned by admin
+              </p>
+
+              <div style={styles.meta}>
+                <StatusPill status={task.status} />
                 {task.delayed && (
-                  <span style={styles.delayed}>Delayed</span>
+                  <span style={styles.overdue}>Overdue</span>
                 )}
               </div>
 
-              {/* ACTIONS */}
               <div style={styles.actions}>
                 {!task.acknowledged && (
                   <button
-                    disabled={savingTaskId === task.id}
-                    onClick={() => handleAcknowledge(task.id)}
+                    disabled={savingId === task.id}
+                    onClick={() => act(acknowledgeTask, task.id)}
                     style={styles.secondaryBtn}
                   >
                     Acknowledge
@@ -123,18 +162,20 @@ function EmployeeDashboard() {
 
                 {task.status !== "Done" && (
                   <button
-                    disabled={savingTaskId === task.id}
-                    onClick={() => handleComplete(task.id)}
+                    disabled={savingId === task.id}
+                    onClick={() =>
+                      act(id => updateTaskStatus(id, "Done"), task.id)
+                    }
                     style={styles.primaryBtn}
                   >
-                    Mark Complete
+                    Complete
                   </button>
                 )}
 
                 {!task.delayed && task.status !== "Done" && (
                   <button
-                    disabled={savingTaskId === task.id}
-                    onClick={() => handleDelayed(task.id)}
+                    disabled={savingId === task.id}
+                    onClick={() => act(markTaskDelayed, task.id)}
                     style={styles.warningBtn}
                   >
                     Mark Delayed
@@ -150,30 +191,59 @@ function EmployeeDashboard() {
 }
 
 /* ===========================
-   UI COMPONENTS
+   SMALL UI PARTS
 =========================== */
 
-function StatusPill({ status }) {
-  const map = {
-    "To Do": { bg: "#FEF3C7", color: "#92400E" },
-    "In Progress": { bg: "#DBEAFE", color: "#1D4ED8" },
-    "Done": { bg: "#DCFCE7", color: "#166534" },
-    "Completed Late": { bg: "#FEE2E2", color: "#991B1B" }
+function StatCard({ label, value, variant = "default" }) {
+  const variants = {
+    default: { bg: "#FFFFFF", color: "#0F172A" },
+    active: { bg: "#E0F2FE", color: "#0369A1" },
+    overdue: { bg: "#FEE2E2", color: "#991B1B" }
   };
 
-  const s = map[status] || map["To Do"];
+  const v = variants[variant];
 
   return (
-    <span
-      style={{
-        padding: "6px 12px",
-        borderRadius: "999px",
-        fontSize: "12px",
-        fontWeight: 600,
-        backgroundColor: s.bg,
-        color: s.color
-      }}
-    >
+    <div style={{
+      background: v.bg,
+      borderRadius: "16px",
+      padding: "20px",
+      minHeight: "110px"
+    }}>
+      <p style={{ fontSize: "14px", color: "#64748B" }}>{label}</p>
+      <h2 style={{ fontSize: "28px", fontWeight: 700, color: v.color }}>
+        {value}
+      </h2>
+    </div>
+  );
+}
+
+function PriorityPill({ level }) {
+  const map = {
+    high: { bg: "#FEE2E2", color: "#991B1B" },
+    medium: { bg: "#FEF3C7", color: "#92400E" },
+    low: { bg: "#DCFCE7", color: "#166534" }
+  };
+
+  const s = map[level];
+
+  return (
+    <span style={{
+      padding: "4px 10px",
+      borderRadius: "999px",
+      fontSize: "12px",
+      fontWeight: 600,
+      backgroundColor: s.bg,
+      color: s.color
+    }}>
+      {level}
+    </span>
+  );
+}
+
+function StatusPill({ status }) {
+  return (
+    <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>
       {status}
     </span>
   );
@@ -184,82 +254,73 @@ function StatusPill({ status }) {
 =========================== */
 
 const styles = {
-  pageTitle: {
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#1E293B"
+  title: { fontSize: "28px", fontWeight: 700 },
+  subtitle: { fontSize: "15px", color: "#64748B" },
+  muted: { color: "#64748B" },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "16px"
   },
-  pageSubtitle: {
-    fontSize: "15px",
-    color: "#64748B"
-  },
-  muted: {
-    fontSize: "14px",
-    color: "#64748B"
-  },
-  taskCard: {
-    background: "#FFFFFF",
-    border: "1px solid #E2E8F0",
-    borderRadius: "16px",
-    padding: "22px",
+
+  controls: {
     display: "flex",
-    flexDirection: "column",
-    gap: "14px"
+    justifyContent: "flex-end"
+  },
+  select: {
+    padding: "10px 12px",
+    borderRadius: "10px",
+    border: "1px solid #E2E8F0"
+  },
+
+  taskCard: {
+    borderRadius: "16px",
+    padding: "20px",
+    border: "1px solid #E2E8F0"
   },
   taskHeader: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center"
   },
-  taskTitle: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#1E293B"
-  },
-  flags: {
+  taskTitle: { fontSize: "16px", fontWeight: 600 },
+  assigned: { fontSize: "14px", color: "#64748B" },
+  meta: {
     display: "flex",
     gap: "12px",
-    fontSize: "13px"
+    marginTop: "6px"
   },
-  acknowledged: {
-    color: "#16A34A",
-    fontWeight: 600
-  },
-  delayed: {
-    color: "#DC2626",
-    fontWeight: 600
-  },
+  overdue: { color: "#DC2626", fontWeight: 600 },
+
   actions: {
     display: "flex",
     gap: "10px",
-    marginTop: "8px"
+    marginTop: "14px"
   },
   primaryBtn: {
-    backgroundColor: "#16A6B0",
-    color: "#FFFFFF",
+    background: "#16A6B0",
+    color: "#FFF",
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: 600,
-    cursor: "pointer"
+    fontWeight: 600
   },
   secondaryBtn: {
-    backgroundColor: "#E0F2FE",
+    background: "#E0F2FE",
     color: "#0369A1",
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: 600,
-    cursor: "pointer"
+    fontWeight: 600
   },
   warningBtn: {
-    backgroundColor: "#FEF3C7",
+    background: "#FEF3C7",
     color: "#92400E",
     border: "none",
     borderRadius: "10px",
     padding: "10px 14px",
-    fontWeight: 600,
-    cursor: "pointer"
+    fontWeight: 600
   }
 };
 

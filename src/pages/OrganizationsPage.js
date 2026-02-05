@@ -1,35 +1,48 @@
 import { useEffect, useState } from "react";
+import {
+  getAllOrganizations,
+  createOrganization,
+  toggleOrganizationStatus
+} from "../services/organizationService";
+import { auth } from "../firebase";
 
-/**
- * Organizations Page (Super Admin)
- * - View all organizations
- * - High-level metrics
- * - Create organization placeholder
- * - Claude-style UI
- */
 function OrganizationsPage() {
-  // Temporary UI-safe data (can be replaced with Firestore later)
-  const [organizations, setOrganizations] = useState([]);
+  const [orgs, setOrgs] = useState([]);
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [togglingId, setTogglingId] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    const data = await getAllOrganizations();
+    setOrgs(data || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    // Placeholder fetch simulation
-    setOrganizations([
-      {
-        id: "org_1",
-        name: "Organization 1",
-        admins: 2,
-        employees: 12,
-        tasks: 48
-      },
-      {
-        id: "org_2",
-        name: "Organization 2",
-        admins: 1,
-        employees: 7,
-        tasks: 19
-      }
-    ]);
+    load();
   }, []);
+
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+
+    setCreating(true);
+    await createOrganization({
+      name,
+      createdBy: auth.currentUser.uid
+    });
+    setName("");
+    await load();
+    setCreating(false);
+  };
+
+  const handleToggle = async (org) => {
+    setTogglingId(org.id);
+    await toggleOrganizationStatus(org.id, org.status);
+    await load();
+    setTogglingId(null);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
@@ -37,51 +50,91 @@ function OrganizationsPage() {
       <div>
         <h1 style={styles.pageTitle}>Organizations</h1>
         <p style={styles.pageSubtitle}>
-          View and manage organizations across the platform
+          Manage organizations across the platform
         </p>
       </div>
 
-      {/* ORGANIZATION CARDS */}
-      {organizations.length === 0 ? (
-        <p style={styles.muted}>No organizations found.</p>
+      {/* LIST */}
+      {loading ? (
+        <p style={styles.muted}>Loading organizations…</p>
+      ) : orgs.length === 0 ? (
+        <p style={styles.muted}>No organizations created yet.</p>
       ) : (
         <div style={styles.grid}>
-          {organizations.map((org) => (
+          {orgs.map((org) => (
             <div key={org.id} style={styles.card}>
               <div>
                 <h3 style={styles.orgName}>{org.name}</h3>
-                <p style={styles.orgId}>ID: {org.id}</p>
+
+                <p style={styles.orgMeta}>
+                  Status:{" "}
+                  <strong
+                    style={{
+                      color:
+                        org.status === "active" ? "#166534" : "#991B1B"
+                    }}
+                  >
+                    {org.status}
+                  </strong>
+                </p>
+
+                <p style={styles.orgMeta}>
+                  Created by: {org.createdBy?.slice(0, 6)}…
+                </p>
+
+                <p style={{ fontSize: "12px", color: "#94A3B8" }}>
+                  Org ID: {org.id}
+                </p>
               </div>
 
-              <div style={styles.metrics}>
-                <Metric label="Admins" value={org.admins} />
-                <Metric label="Employees" value={org.employees} />
-                <Metric label="Tasks" value={org.tasks} />
-              </div>
-
-              <button style={styles.secondaryBtn} disabled>
-                View Organization
+              {/* TOGGLE BUTTON */}
+              <button
+                onClick={() => handleToggle(org)}
+                disabled={togglingId === org.id}
+                style={{
+                  marginTop: "16px",
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  border: "none",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  backgroundColor:
+                    org.status === "active" ? "#FEE2E2" : "#DCFCE7",
+                  color:
+                    org.status === "active" ? "#991B1B" : "#166534"
+                }}
+              >
+                {togglingId === org.id
+                  ? "Updating…"
+                  : org.status === "active"
+                  ? "Disable Organization"
+                  : "Enable Organization"}
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* CREATE ORGANIZATION */}
+      {/* CREATE */}
       <div style={styles.createCard}>
         <h3 style={styles.cardTitle}>Create Organization</h3>
         <p style={styles.cardHint}>
-          Organization creation will be enabled in the next phase.
+          This will allow admins and employees to be assigned later.
         </p>
 
         <div style={styles.createRow}>
           <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Organization name"
-            disabled
             style={styles.input}
           />
-          <button disabled style={styles.primaryBtnDisabled}>
-            Create
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            style={styles.primaryBtn}
+          >
+            {creating ? "Creating..." : "Create"}
           </button>
         </div>
       </div>
@@ -90,98 +143,37 @@ function OrganizationsPage() {
 }
 
 /* ===========================
-   SMALL UI PARTS
-=========================== */
-
-function Metric({ label, value }) {
-  return (
-    <div style={styles.metric}>
-      <p style={styles.metricLabel}>{label}</p>
-      <p style={styles.metricValue}>{value}</p>
-    </div>
-  );
-}
-
-/* ===========================
    STYLES (Claude-aligned)
 =========================== */
-
 const styles = {
-  pageTitle: {
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#1E293B",
-    marginBottom: "6px"
-  },
-  pageSubtitle: {
-    fontSize: "15px",
-    color: "#64748B"
-  },
-  muted: {
-    fontSize: "14px",
-    color: "#64748B"
-  },
+  pageTitle: { fontSize: "28px", fontWeight: 700 },
+  pageSubtitle: { fontSize: "15px", color: "#64748B" },
+  muted: { color: "#64748B" },
+
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
     gap: "24px"
   },
   card: {
-    backgroundColor: "#FFFFFF",
+    background: "#FFFFFF",
     border: "1px solid #E2E8F0",
     borderRadius: "16px",
     padding: "24px",
     display: "flex",
     flexDirection: "column",
-    gap: "20px"
+    justifyContent: "space-between"
   },
-  orgName: {
-    fontSize: "18px",
-    fontWeight: 600,
-    color: "#0F172A"
-  },
-  orgId: {
-    fontSize: "13px",
-    color: "#64748B"
-  },
-  metrics: {
-    display: "flex",
-    gap: "24px"
-  },
-  metric: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "2px"
-  },
-  metricLabel: {
-    fontSize: "13px",
-    color: "#64748B"
-  },
-  metricValue: {
-    fontSize: "22px",
-    fontWeight: 700,
-    color: "#1E293B"
-  },
-  secondaryBtn: {
-    padding: "10px 14px",
-    borderRadius: "10px",
-    border: "1px solid #E2E8F0",
-    backgroundColor: "#F8FAFC",
-    fontWeight: 600,
-    cursor: "not-allowed",
-    color: "#94A3B8"
-  },
+  orgName: { fontSize: "18px", fontWeight: 600 },
+  orgMeta: { fontSize: "14px", color: "#64748B" },
+
   createCard: {
-    backgroundColor: "#FFFFFF",
+    background: "#FFFFFF",
     border: "1px dashed #CBD5E1",
     borderRadius: "16px",
     padding: "24px"
   },
-  cardTitle: {
-    fontSize: "18px",
-    fontWeight: 600,
-    marginBottom: "6px"
-  },
+  cardTitle: { fontSize: "18px", fontWeight: 600 },
   cardHint: {
     fontSize: "14px",
     color: "#64748B",
@@ -195,17 +187,14 @@ const styles = {
   input: {
     padding: "12px 14px",
     borderRadius: "10px",
-    border: "1px solid #E2E8F0",
-    fontSize: "14px",
-    backgroundColor: "#F8FAFC"
+    border: "1px solid #E2E8F0"
   },
-  primaryBtnDisabled: {
-    backgroundColor: "#CBD5E1",
-    color: "#475569",
+  primaryBtn: {
+    background: "#16A6B0",
+    color: "#FFF",
     border: "none",
     borderRadius: "10px",
-    fontWeight: 600,
-    cursor: "not-allowed"
+    fontWeight: 600
   }
 };
 

@@ -13,9 +13,15 @@ import { db } from "../firebase";
 /* =====================
    CREATE TASK (ADMIN)
 ===================== */
-export const createTask = async ({ title, organizationId, assignedTo }) => {
+export const createTask = async ({
+  title,
+  organizationId,
+  assignedTo,
+  description
+}) => {
   await addDoc(collection(db, "tasks"), {
     title,
+    description: description || "",
     organizationId,
     assignedTo,
     status: "To Do",
@@ -25,6 +31,7 @@ export const createTask = async ({ title, organizationId, assignedTo }) => {
     updatedAt: serverTimestamp()
   });
 };
+
 
 /* =====================
    UPDATE TASK (EMPLOYEE)

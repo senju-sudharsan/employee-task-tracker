@@ -3,6 +3,8 @@ import {
   LayoutDashboard,
   Building2,
   Users,
+  BarChart3,
+  ClipboardList,
   Settings,
   LogOut
 } from "lucide-react";
@@ -19,12 +21,13 @@ function Layout({ children, role, onLogout }) {
     ],
     admin: [
       { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-      { name: "Tasks", path: "/tasks", icon: Users },
+      { name: "Tasks", path: "/tasks", icon: ClipboardList },
+      { name: "Employees", path: "/employees", icon: Users },
       { name: "Settings", path: "/settings", icon: Settings }
     ],
     employee: [
-      { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-      { name: "Settings", path: "/settings", icon: Settings }
+      { name: "Tasks", path: "/tasks", icon: ClipboardList },
+      { name: "Insights", path: "/insights", icon: BarChart3 }
     ]
   };
 
@@ -131,9 +134,7 @@ function Layout({ children, role, onLogout }) {
       </aside>
 
       {/* MAIN */}
-      <main style={{ flex: 1, padding: "40px" }}>
-        {children}
-      </main>
+      <main style={{ flex: 1, padding: "40px" }}>{children}</main>
     </div>
   );
 }

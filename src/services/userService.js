@@ -1,34 +1,51 @@
-import { auth, db } from "../firebase";
+import { db, auth } from "../firebase";
 import {
-  createUserWithEmailAndPassword
-} from "firebase/auth";
-import {
+  collection,
+  getDocs,
   doc,
   setDoc,
   serverTimestamp
 } from "firebase/firestore";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 
 /* ===========================
-   CREATE ADMIN (SUPER ADMIN)
+   GET ALL USERS
 =========================== */
-export const createAdminUser = async ({
+export const getAllUsers = async () => {
+  const snap = await getDocs(collection(db, "users"));
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...d.data()
+  }));
+};
+
+/* ===========================
+   CREATE EMPLOYEE
+   (ADMIN & SUPER ADMIN)
+=========================== */
+export const createEmployee = async ({
+  name,
   email,
   password,
-  name,
   organizationId,
   createdBy
 }) => {
-  const userCredential =
-    await createUserWithEmailAndPassword(auth, email, password);
+  if (!name || !email || !password || !organizationId) {
+    throw new Error("All fields are required");
+  }
 
-  const uid = userCredential.user.uid;
+  // 1️⃣ Create Auth account
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const uid = cred.user.uid;
 
+  // 2️⃣ Create Firestore profile (UID === DOC ID)
   await setDoc(doc(db, "users", uid), {
     uid,
     name,
     email,
-    role: "admin",
+    role: "employee",
     organizationId,
+    status: "Active",
     createdBy,
     createdAt: serverTimestamp()
   });
@@ -37,26 +54,30 @@ export const createAdminUser = async ({
 };
 
 /* ===========================
-   CREATE EMPLOYEE (ADMIN / SUPER ADMIN)
+   CREATE ADMIN
+   (SUPER ADMIN ONLY)
 =========================== */
-export const createEmployeeUser = async ({
+export const createAdmin = async ({
+  name,
   email,
   password,
-  name,
   organizationId,
   createdBy
 }) => {
-  const userCredential =
-    await createUserWithEmailAndPassword(auth, email, password);
+  if (!name || !email || !password || !organizationId) {
+    throw new Error("All fields are required");
+  }
 
-  const uid = userCredential.user.uid;
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const uid = cred.user.uid;
 
   await setDoc(doc(db, "users", uid), {
     uid,
     name,
     email,
-    role: "employee",
+    role: "admin",
     organizationId,
+    status: "Active",
     createdBy,
     createdAt: serverTimestamp()
   });

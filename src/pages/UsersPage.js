@@ -1,223 +1,132 @@
+import { useEffect, useState } from "react";
+import { auth } from "../firebase";
+import { getAllUsers, createEmployee } from "../services/userService";
+import { getUserProfile } from "../services/authService";
+
 function UsersPage() {
-  // UI-only placeholder data
-  const users = [
-    {
-      id: "u1",
-      name: "Akhil Kumar",
-      email: "akhil@org1.com",
-      role: "Admin",
-      organization: "Organization 1",
-      status: "Active"
-    },
-    {
-      id: "u2",
-      name: "Neha Sharma",
-      email: "neha@org1.com",
-      role: "Employee",
-      organization: "Organization 1",
-      status: "Active"
-    },
-    {
-      id: "u3",
-      name: "Rohit Verma",
-      email: "rohit@org2.com",
-      role: "Employee",
-      organization: "Organization 2",
-      status: "Disabled"
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const [adminOrgId, setAdminOrgId] = useState(null);
+
+  /* ===========================
+     LOAD USERS + ADMIN ORG
+  =========================== */
+  useEffect(() => {
+    const bootstrap = async () => {
+      if (!auth.currentUser) return;
+
+      const profile = await getUserProfile(auth.currentUser.uid);
+
+      if (profile.role !== "admin") {
+        alert("Only admins can access this page");
+        return;
+      }
+
+      if (!profile.organizationId) {
+        alert("Admin has no organization assigned");
+        return;
+      }
+
+      setAdminOrgId(profile.organizationId);
+
+      const data = await getAllUsers();
+      setUsers(data || []);
+      setLoading(false);
+    };
+
+    bootstrap();
+  }, []);
+
+  /* ===========================
+     CREATE EMPLOYEE
+  =========================== */
+  const handleCreate = async () => {
+    if (!name || !email || !password) {
+      alert("All fields are required");
+      return;
     }
-  ];
+
+    setCreating(true);
+
+    try {
+      await createEmployee({
+        name,
+        email,
+        password,
+        organizationId: adminOrgId, // 🔒 AUTO ASSIGNED
+        createdBy: auth.currentUser.uid
+      });
+
+      setName("");
+      setEmail("");
+      setPassword("");
+
+      const data = await getAllUsers();
+      setUsers(data || []);
+    } catch (err) {
+      console.error(err);
+      alert(err.message);
+    }
+
+    setCreating(false);
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "40px" }}>
-      {/* HEADER */}
+    <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+      <h1>Employees</h1>
+
+      {/* USERS LIST */}
       <div>
-        <h1 style={styles.pageTitle}>Users</h1>
-        <p style={styles.pageSubtitle}>
-          Admins and employees across all organizations
-        </p>
+        {loading && <p>Loading...</p>}
+
+        {!loading &&
+          users
+            .filter(u => u.organizationId === adminOrgId)
+            .map(u => (
+              <div key={u.id} style={{ padding: "8px 0" }}>
+                <strong>{u.name}</strong> — {u.email}
+              </div>
+            ))}
       </div>
 
-      {/* USER TABLE */}
-      <div style={styles.card}>
-        <div style={styles.tableHeader}>
-          <span>Name</span>
-          <span>Role</span>
-          <span>Organization</span>
-          <span>Status</span>
-          <span></span>
-        </div>
+      {/* CREATE EMPLOYEE */}
+      <div style={{ borderTop: "1px solid #eee", paddingTop: "24px" }}>
+        <h3>Create Employee</h3>
 
-        {users.map((user) => (
-          <div key={user.id} style={styles.tableRow}>
-            <div>
-              <p style={styles.userName}>{user.name}</p>
-              <p style={styles.userEmail}>{user.email}</p>
-            </div>
+        <input
+          placeholder="Name"
+          value={name}
+          onChange={e => setName(e.target.value)}
+        />
+        <br />
 
-            <span style={styles.role}>{user.role}</span>
-            <span style={styles.org}>{user.organization}</span>
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+        />
+        <br />
 
-            <StatusPill status={user.status} />
+        <input
+          type="password"
+          placeholder="Temporary Password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+        />
+        <br />
 
-            <button style={styles.actionBtn} disabled>
-              View
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* CREATE USER (PLACEHOLDER) */}
-      <div style={styles.createCard}>
-        <h3 style={styles.cardTitle}>Create User</h3>
-        <p style={styles.cardHint}>
-          User creation will be enabled in a later phase.
-        </p>
-
-        <div style={styles.createGrid}>
-          <input placeholder="Email address" disabled style={styles.input} />
-          <select disabled style={styles.input}>
-            <option>Role</option>
-            <option>Admin</option>
-            <option>Employee</option>
-          </select>
-          <select disabled style={styles.input}>
-            <option>Organization</option>
-          </select>
-          <button disabled style={styles.primaryBtnDisabled}>
-            Create
-          </button>
-        </div>
+        <button onClick={handleCreate} disabled={creating}>
+          {creating ? "Creating..." : "Create Employee"}
+        </button>
       </div>
     </div>
   );
 }
-
-/* ===========================
-   SMALL UI PARTS
-=========================== */
-
-function StatusPill({ status }) {
-  const map = {
-    Active: { bg: "#DCFCE7", color: "#166534" },
-    Disabled: { bg: "#FEE2E2", color: "#991B1B" }
-  };
-
-  const s = map[status];
-
-  return (
-    <span
-      style={{
-        padding: "6px 12px",
-        borderRadius: "999px",
-        fontSize: "12px",
-        fontWeight: 600,
-        backgroundColor: s.bg,
-        color: s.color
-      }}
-    >
-      {status}
-    </span>
-  );
-}
-
-/* ===========================
-   STYLES (Claude-aligned)
-=========================== */
-
-const styles = {
-  pageTitle: {
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#1E293B",
-    marginBottom: "6px"
-  },
-  pageSubtitle: {
-    fontSize: "15px",
-    color: "#64748B"
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    border: "1px solid #E2E8F0",
-    borderRadius: "16px",
-    padding: "24px"
-  },
-  tableHeader: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 80px",
-    fontSize: "13px",
-    color: "#64748B",
-    fontWeight: 600,
-    marginBottom: "12px"
-  },
-  tableRow: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr 80px",
-    alignItems: "center",
-    padding: "14px 0",
-    borderTop: "1px solid #E2E8F0"
-  },
-  userName: {
-    fontSize: "14px",
-    fontWeight: 600,
-    color: "#1E293B"
-  },
-  userEmail: {
-    fontSize: "13px",
-    color: "#64748B"
-  },
-  role: {
-    fontSize: "14px",
-    fontWeight: 500
-  },
-  org: {
-    fontSize: "14px",
-    color: "#475569"
-  },
-  actionBtn: {
-    padding: "8px 12px",
-    borderRadius: "8px",
-    border: "1px solid #E2E8F0",
-    backgroundColor: "#F8FAFC",
-    fontWeight: 600,
-    cursor: "not-allowed",
-    color: "#94A3B8"
-  },
-  createCard: {
-    backgroundColor: "#FFFFFF",
-    border: "1px dashed #CBD5E1",
-    borderRadius: "16px",
-    padding: "24px"
-  },
-  cardTitle: {
-    fontSize: "18px",
-    fontWeight: 600,
-    marginBottom: "6px"
-  },
-  cardHint: {
-    fontSize: "14px",
-    color: "#64748B",
-    marginBottom: "16px"
-  },
-  createGrid: {
-    display: "grid",
-    gridTemplateColumns: "2fr 1fr 1fr 1fr",
-    gap: "12px"
-  },
-  input: {
-    padding: "12px 14px",
-    borderRadius: "10px",
-    border: "1px solid #E2E8F0",
-    fontSize: "14px",
-    backgroundColor: "#F8FAFC"
-  },
-  primaryBtnDisabled: {
-    backgroundColor: "#CBD5E1",
-    color: "#475569",
-    border: "none",
-    borderRadius: "10px",
-    fontWeight: 600,
-    cursor: "not-allowed"
-  }
-};
 
 export default UsersPage;

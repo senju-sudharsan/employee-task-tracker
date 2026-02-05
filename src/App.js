@@ -5,20 +5,21 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./firebase";
 import { getUserProfile } from "./services/authService";
 import { getAllTasks } from "./services/taskService";
+import { getOrganizationById } from "./services/organizationService";
 
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
+import OrganizationDisabledPage from "./pages/OrganizationDisabledPage";
 
 import SuperAdminDashboard from "./components/SuperAdminDashboard";
 import AdminDashboard from "./components/AdminDashboard";
 import EmployeeDashboard from "./components/EmployeeDashboard";
 
 import TasksPage from "./pages/TasksPage";
-import AnalyticsPage from "./pages/AnalyticsPage";
-import SettingsPage from "./pages/SettingsPage";
-
 import OrganizationsPage from "./pages/OrganizationsPage";
 import UsersPage from "./pages/UsersPage";
+import EmployeeInsightsPage from "./pages/EmployeeInsightsPage";
+import SettingsPage from "./pages/SettingsPage";
 
 /* ===========================
    ROLE NORMALIZER
@@ -26,12 +27,10 @@ import UsersPage from "./pages/UsersPage";
 function normalizeRole(rawRole) {
   if (!rawRole) return null;
 
-  const role = rawRole.toLowerCase().trim();
-
-  if (role === "superadmin" || role === "super_admin") return "super_admin";
-  if (role === "admin") return "admin";
-  if (role === "employee") return "employee";
-
+  const r = rawRole.toLowerCase().trim();
+  if (r === "superadmin" || r === "super_admin") return "super_admin";
+  if (r === "admin") return "admin";
+  if (r === "employee") return "employee";
   return null;
 }
 
@@ -41,11 +40,10 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  /* ===========================
-     AUTH BOOTSTRAP
-  =========================== */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+
       if (!firebaseUser) {
         setUser(null);
         setRole(null);
@@ -54,19 +52,45 @@ function App() {
         return;
       }
 
-      const profile = await getUserProfile(firebaseUser.uid);
-      const normalizedRole = normalizeRole(profile.role);
+      try {
+        // 1️⃣ Load Firestore profile
+        const profile = await getUserProfile(firebaseUser.uid);
+        const normalizedRole = normalizeRole(profile.role);
 
-      const fullUser = {
-        uid: firebaseUser.uid,
-        ...profile
-      };
+        if (!normalizedRole) {
+          console.error("Invalid role:", profile.role);
+          await signOut(auth);
+          return;
+        }
 
-      setUser(fullUser);
-      setRole(normalizedRole);
+        // 2️⃣ Resolve organization status (ONLY if org exists)
+        let orgStatus = "active";
 
-      const allTasks = await getAllTasks();
-      setTasks(allTasks || []);
+        if (profile.organizationId) {
+          const org = await getOrganizationById(profile.organizationId);
+
+          // If org missing → do NOT hard lock user
+          if (org && org.status) {
+            orgStatus = org.status;
+          }
+        }
+
+        // 3️⃣ Set global user state
+        setUser({
+          uid: firebaseUser.uid,
+          ...profile,
+          orgStatus
+        });
+
+        setRole(normalizedRole);
+
+        // 4️⃣ Tasks (used by dashboards)
+        const allTasks = await getAllTasks();
+        setTasks(allTasks || []);
+      } catch (err) {
+        console.error("Auth bootstrap failed:", err);
+        await signOut(auth);
+      }
 
       setLoading(false);
     });
@@ -75,25 +99,28 @@ function App() {
   }, []);
 
   /* ===========================
-     LOGOUT
-  =========================== */
-  const handleLogout = async () => {
-    await signOut(auth);
-  };
-
-  /* ===========================
      GUARDS
   =========================== */
+
   if (loading) {
-    return <div style={{ padding: 40 }}>Loading...</div>;
+    return <div style={{ padding: 40 }}>Loading…</div>;
   }
 
-  if (!user) {
+  if (!user || !role) {
     return <LoginPage />;
   }
 
+  // 🚨 BLOCK ONLY ADMIN + EMPLOYEE WHEN ORG DISABLED
+  if (
+    role !== "super_admin" &&
+    user.organizationId &&
+    user.orgStatus === "disabled"
+  ) {
+    return <OrganizationDisabledPage />;
+  }
+
   /* ===========================
-     DASHBOARD SWITCH (FIXED)
+     DASHBOARD ROUTER
   =========================== */
   const DashboardByRole = () => {
     if (role === "super_admin") {
@@ -109,44 +136,72 @@ function App() {
       );
     }
 
-    if (role === "employee") {
-      const myTasks = tasks.filter(
-        (t) => t.assignedTo === user.uid
-      );
-
-      return (
-        <EmployeeDashboard
-          tasks={myTasks}
-          refreshTasks={async () => {
-            const updated = await getAllTasks();
-            setTasks(updated || []);
-          }}
-        />
-      );
-    }
-
-    return (
-      <pre style={{ color: "red" }}>
-        Unknown role: {JSON.stringify(role, null, 2)}
-      </pre>
-    );
+    return <Navigate to="/tasks" replace />;
   };
 
   /* ===========================
      ROUTES
   =========================== */
   return (
-    <Layout role={role} onLogout={handleLogout}>
+    <Layout role={role} onLogout={() => signOut(auth)}>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardByRole />} />
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/organizations" element={<OrganizationsPage />} />
-        <Route path="/users" element={<UsersPage />} />
+        {/* ROOT */}
+        <Route
+          path="/"
+          element={
+            role === "employee"
+              ? <Navigate to="/tasks" replace />
+              : <Navigate to="/dashboard" replace />
+          }
+        />
 
+        {/* DASHBOARD */}
+        <Route
+          path="/dashboard"
+          element={
+            role === "employee"
+              ? <Navigate to="/tasks" replace />
+              : <DashboardByRole />
+          }
+        />
+
+        {/* SUPER ADMIN */}
+        {role === "super_admin" && (
+          <>
+            <Route path="/organizations" element={<OrganizationsPage />} />
+            <Route
+              path="/users"
+              element={
+                <UsersPage organizationId={null} />
+              }
+            />
+          </>
+        )}
+
+        {/* ADMIN */}
+        {role === "admin" && (
+          <>
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route
+              path="/employees"
+              element={
+                <UsersPage organizationId={user.organizationId} />
+              }
+            />
+          </>
+        )}
+
+        {/* EMPLOYEE */}
+        {role === "employee" && (
+          <>
+            <Route path="/tasks" element={<EmployeeDashboard />} />
+            <Route path="/insights" element={<EmployeeInsightsPage />} />
+          </>
+        )}
+
+        {/* SHARED */}
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );
