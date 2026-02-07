@@ -4,7 +4,6 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 
 import { auth } from "./firebase";
 import { getUserProfile } from "./services/authService";
-import { getAllTasks } from "./services/taskService";
 import { getOrganizationById } from "./services/organizationService";
 
 import Layout from "./components/Layout";
@@ -20,6 +19,7 @@ import OrganizationsPage from "./pages/OrganizationsPage";
 import UsersPage from "./pages/UsersPage";
 import EmployeeInsightsPage from "./pages/EmployeeInsightsPage";
 import SettingsPage from "./pages/SettingsPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 
 /* ===========================
    ROLE NORMALIZER
@@ -37,7 +37,6 @@ function normalizeRole(rawRole) {
 function App() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
-  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,48 +46,28 @@ function App() {
       if (!firebaseUser) {
         setUser(null);
         setRole(null);
-        setTasks([]);
         setLoading(false);
         return;
       }
 
       try {
-        // 1️⃣ Load Firestore profile
         const profile = await getUserProfile(firebaseUser.uid);
         const normalizedRole = normalizeRole(profile.role);
 
         if (!normalizedRole) {
-          console.error("Invalid role:", profile.role);
           await signOut(auth);
           return;
         }
 
-        // 2️⃣ Resolve organization status (ONLY if org exists)
         let orgStatus = "active";
-
         if (profile.organizationId) {
           const org = await getOrganizationById(profile.organizationId);
-
-          // If org missing → do NOT hard lock user
-          if (org && org.status) {
-            orgStatus = org.status;
-          }
+          if (org?.status) orgStatus = org.status;
         }
 
-        // 3️⃣ Set global user state
-        setUser({
-          uid: firebaseUser.uid,
-          ...profile,
-          orgStatus
-        });
-
+        setUser({ uid: firebaseUser.uid, ...profile, orgStatus });
         setRole(normalizedRole);
-
-        // 4️⃣ Tasks (used by dashboards)
-        const allTasks = await getAllTasks();
-        setTasks(allTasks || []);
-      } catch (err) {
-        console.error("Auth bootstrap failed:", err);
+      } catch {
         await signOut(auth);
       }
 
@@ -98,19 +77,9 @@ function App() {
     return () => unsub();
   }, []);
 
-  /* ===========================
-     GUARDS
-  =========================== */
+  if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
+  if (!user || !role) return <LoginPage />;
 
-  if (loading) {
-    return <div style={{ padding: 40 }}>Loading…</div>;
-  }
-
-  if (!user || !role) {
-    return <LoginPage />;
-  }
-
-  // BLOCK ONLY ADMIN + EMPLOYEE WHEN ORG DISABLED
   if (
     role !== "super_admin" &&
     user.organizationId &&
@@ -119,33 +88,16 @@ function App() {
     return <OrganizationDisabledPage />;
   }
 
-  /* ===========================
-     DASHBOARD ROUTER
-  =========================== */
   const DashboardByRole = () => {
-    if (role === "super_admin") {
-      return <SuperAdminDashboard tasks={tasks} />;
-    }
-
-    if (role === "admin") {
-      return (
-        <AdminDashboard
-          organizationId={user.organizationId}
-          adminUid={user.uid}
-        />
-      );
-    }
-
+    if (role === "super_admin") return <SuperAdminDashboard currentUser={user} />;
+    if (role === "admin")
+      return <AdminDashboard organizationId={user.organizationId} currentUser={user} />;
     return <Navigate to="/tasks" replace />;
   };
 
-  /* ===========================
-     ROUTES
-  =========================== */
   return (
     <Layout role={role} onLogout={() => signOut(auth)}>
       <Routes>
-        {/* ROOT */}
         <Route
           path="/"
           element={
@@ -155,7 +107,6 @@ function App() {
           }
         />
 
-        {/* DASHBOARD */}
         <Route
           path="/dashboard"
           element={
@@ -166,17 +117,23 @@ function App() {
         />
 
         {/* SUPER ADMIN */}
-
         {role === "super_admin" && (
-  <>
-    <Route path="/tasks" element={<TasksPage />} />
-    <Route path="/organizations" element={<OrganizationsPage />} />
-    <Route path="/users" element={<UsersPage organizationId={null} />} />
-  </>
-)}
-
-
-
+          <>
+            <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/organizations" element={<OrganizationsPage />} />
+            <Route path="/users" element={<UsersPage organizationId={null} />} />
+            <Route
+              path="/analytics"
+              element={
+                <AnalyticsPage
+                  role={role}
+                  organizationId={null}
+                  currentUser={user}
+                />
+              }
+            />
+          </>
+        )}
 
         {/* ADMIN */}
         {role === "admin" && (
@@ -184,8 +141,16 @@ function App() {
             <Route path="/tasks" element={<TasksPage />} />
             <Route
               path="/employees"
+              element={<UsersPage organizationId={user.organizationId} />}
+            />
+            <Route
+              path="/analytics"
               element={
-                <UsersPage organizationId={user.organizationId} />
+                <AnalyticsPage
+                  role={role}
+                  organizationId={user.organizationId}
+                  currentUser={user}
+                />
               }
             />
           </>
@@ -194,12 +159,11 @@ function App() {
         {/* EMPLOYEE */}
         {role === "employee" && (
           <>
-            <Route path="/tasks" element={<EmployeeDashboard />} />
+            <Route path="/tasks" element={<EmployeeDashboard currentUser={user} />} />
             <Route path="/insights" element={<EmployeeInsightsPage />} />
           </>
         )}
 
-        {/* SHARED */}
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
