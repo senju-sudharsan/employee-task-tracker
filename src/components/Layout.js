@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -5,25 +6,25 @@ import {
   Users,
   BarChart3,
   ClipboardList,
-  Settings,
-  LogOut
+  LogOut,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 function Layout({ children, role, onLogout }) {
   const location = useLocation();
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navByRole = {
     super_admin: [
       { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
       { name: "Organizations", path: "/organizations", icon: Building2 },
-      { name: "Users", path: "/users", icon: Users },
-      { name: "Settings", path: "/settings", icon: Settings }
+      { name: "Users", path: "/users", icon: Users }
     ],
     admin: [
       { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
       { name: "Tasks", path: "/tasks", icon: ClipboardList },
-      { name: "Employees", path: "/employees", icon: Users },
-      { name: "Settings", path: "/settings", icon: Settings }
+      { name: "Employees", path: "/employees", icon: Users }
     ],
     employee: [
       { name: "Tasks", path: "/tasks", icon: ClipboardList },
@@ -34,49 +35,66 @@ function Layout({ children, role, onLogout }) {
   const navItems = navByRole[role] || [];
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#FEFCF9" }}>
-      {/* SIDEBAR */}
+    <div style={{ display: "flex", minHeight: "100vh", background: "#FEFCF9", fontFamily: "'Poppins', sans-serif" }}>
       <aside
         style={{
-          width: 260,
+          width: isCollapsed ? 80 : 260,
           backgroundColor: "#FFFFFF",
-          borderRight: "1px solid #E2E8F0",
+          borderRight: "1px solid #E8E4DD",
           display: "flex",
-          flexDirection: "column"
+          flexDirection: "column",
+          transition: "width 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          position: "relative"
         }}
       >
-        {/* BRAND */}
-        <div style={{ padding: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ padding: isCollapsed ? "24px 16px" : "24px", transition: "padding 0.3s ease" }}>
+          <div style={{ 
+            display: "flex", 
+            alignItems: "center", 
+            gap: "12px",
+            justifyContent: isCollapsed ? "center" : "flex-start",
+            overflow: "hidden"
+          }}>
             <div
               style={{
                 width: 40,
                 height: 40,
                 borderRadius: "10px",
-                backgroundColor: "#E2E8F0",
+                background: "linear-gradient(135deg, #F5E6D3 0%, #E8D4B8 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontWeight: 700,
-                color: "#475569"
+                fontSize: 14,
+                color: "#8B6F47",
+                flexShrink: 0,
+                boxShadow: "0 2px 8px rgba(139, 111, 71, 0.15)"
               }}
             >
-              LOGO
+              WH
             </div>
-            <span style={{ fontSize: "20px", fontWeight: 700 }}>
-              WorkflowHub
-            </span>
+            {!isCollapsed && (
+              <span style={{ 
+                fontSize: "18px", 
+                fontWeight: 700,
+                color: "#1F1F1F",
+                letterSpacing: "-0.3px",
+                whiteSpace: "nowrap"
+              }}>
+                WorkflowHub
+              </span>
+            )}
           </div>
         </div>
 
-        {/* NAV */}
         <nav
           style={{
             flex: 1,
-            padding: "8px 12px",
+            padding: isCollapsed ? "8px 12px" : "8px 16px",
             display: "flex",
             flexDirection: "column",
-            gap: "6px"
+            gap: "4px",
+            transition: "padding 0.3s ease"
           }}
         >
           {navItems.map((item) => {
@@ -87,54 +105,128 @@ function Layout({ children, role, onLogout }) {
               <Link
                 key={item.path}
                 to={item.path}
+                title={isCollapsed ? item.name : undefined}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: "12px",
-                  padding: "12px 16px",
-                  borderRadius: "12px",
+                  padding: isCollapsed ? "14px 0" : "12px 14px",
+                  borderRadius: "10px",
                   textDecoration: "none",
-                  fontSize: "15px",
-                  fontWeight: 500,
-                  color: isActive ? "#FFFFFF" : "#475569",
+                  fontSize: "14px",
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? "#8B6F47" : "#64748B",
                   background: isActive
-                    ? "linear-gradient(135deg, #16A6B0, #0891B2)"
-                    : "transparent"
+                    ? "linear-gradient(135deg, #FDF8F0 0%, #F5E6D3 100%)"
+                    : "transparent",
+                  border: isActive ? "1px solid #E8D4B8" : "1px solid transparent",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  justifyContent: isCollapsed ? "center" : "flex-start",
+                  position: "relative"
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "#FAF8F4";
+                    e.currentTarget.style.color = "#8B6F47";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "#64748B";
+                  }
                 }}
               >
-                <Icon size={18} />
-                {item.name}
+                <Icon size={19} strokeWidth={isActive ? 2.5 : 2} style={{ flexShrink: 0 }} />
+                {!isCollapsed && <span style={{ whiteSpace: "nowrap" }}>{item.name}</span>}
+                {isActive && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 3,
+                      height: "60%",
+                      background: "linear-gradient(180deg, #D4AF37 0%, #B8941F 100%)",
+                      borderRadius: "0 2px 2px 0"
+                    }}
+                  />
+                )}
               </Link>
             );
           })}
         </nav>
 
-        {/* LOGOUT */}
-        <div style={{ padding: "16px" }}>
+        <div style={{ padding: isCollapsed ? "16px 12px" : "16px", transition: "padding 0.3s ease" }}>
           <button
             onClick={onLogout}
+            title={isCollapsed ? "Logout" : undefined}
             style={{
               width: "100%",
               display: "flex",
               alignItems: "center",
               gap: "10px",
-              padding: "12px 16px",
-              borderRadius: "12px",
-              border: "none",
-              backgroundColor: "#FEE2E2",
-              color: "#B91C1C",
+              padding: isCollapsed ? "12px 0" : "11px 14px",
+              borderRadius: "10px",
+              border: "1px solid #FFE4E4",
+              backgroundColor: "#FFF5F5",
+              color: "#DC2626",
+              fontSize: "14px",
               fontWeight: 500,
-              cursor: "pointer"
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              fontFamily: "'Poppins', sans-serif",
+              justifyContent: isCollapsed ? "center" : "flex-start"
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "#FEE2E2";
+              e.currentTarget.style.borderColor = "#FECACA";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "#FFF5F5";
+              e.currentTarget.style.borderColor = "#FFE4E4";
             }}
           >
-            <LogOut size={16} />
-            Logout
+            <LogOut size={17} strokeWidth={2} style={{ flexShrink: 0 }} />
+            {!isCollapsed && <span style={{ whiteSpace: "nowrap" }}>Logout</span>}
           </button>
         </div>
+
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          style={{
+            position: "absolute",
+            top: "50%",
+            right: -16,
+            transform: "translateY(-50%)",
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            border: "1px solid #E8E4DD",
+            background: "#FFFFFF",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+            transition: "all 0.2s ease",
+            color: "#8B6F47"
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "linear-gradient(135deg, #FDF8F0 0%, #F5E6D3 100%)";
+            e.currentTarget.style.boxShadow = "0 4px 12px rgba(139, 111, 71, 0.2)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "#FFFFFF";
+            e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.08)";
+          }}
+        >
+          {isCollapsed ? <ChevronRight size={18} strokeWidth={2.5} /> : <ChevronLeft size={18} strokeWidth={2.5} />}
+        </button>
       </aside>
 
-      {/* MAIN */}
-      <main style={{ flex: 1, padding: "40px" }}>{children}</main>
+      <main style={{ flex: 1, padding: "40px", minWidth: 0 }}>{children}</main>
     </div>
   );
 }

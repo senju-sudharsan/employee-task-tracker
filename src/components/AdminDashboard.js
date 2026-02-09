@@ -49,10 +49,14 @@ function AdminDashboard({ organizationId, currentUser }) {
     return d < now;
   }).length;
 
+  const completedLate = tasks.filter(t => t.status === "Done" && t.completedLate === true).length;
+  const completedOnTime = tasks.filter(t => t.status === "Done" && !t.completedLate).length;
+
   const metrics = {
     total: tasks.length,
     inProgress: tasks.filter(t => t.status !== "Done").length,
-    completed: tasks.filter(t => t.status === "Done").length,
+    completed: completedOnTime,
+    completedLate,
     overdue: overdue
   };
 
@@ -122,6 +126,20 @@ function AdminDashboard({ organizationId, currentUser }) {
       )
     },
     { 
+      label: "Completed Late", 
+      value: metrics.completedLate, 
+      color: "#F59E0B",
+      bgGradient: "linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.02))",
+      filter: "completed-late",
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" />
+          <path d="M16 16l-4-4" />
+        </svg>
+      )
+    },
+    { 
       label: "Overdue", 
       value: metrics.overdue, 
       color: "#EF4444",
@@ -162,6 +180,7 @@ function AdminDashboard({ organizationId, currentUser }) {
 
     const data = [
       { value: metrics.completed, color: "#22C55E", key: "completed" },
+      { value: metrics.completedLate, color: "#F59E0B", key: "completedLate" },
       { value: metrics.inProgress, color: "#FACC15", key: "progress" },
       { value: metrics.overdue, color: "#EF4444", key: "overdue" }
     ];
@@ -284,6 +303,13 @@ function AdminDashboard({ organizationId, currentUser }) {
                   <div style={styles.legendContent}>
                     <span style={styles.legendLabel}>Completed</span>
                     <span style={styles.legendValue}>{metrics.completed}</span>
+                  </div>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{...styles.legendDot, backgroundColor: "#F59E0B"}}></div>
+                  <div style={styles.legendContent}>
+                    <span style={styles.legendLabel}>Completed Late</span>
+                    <span style={styles.legendValue}>{metrics.completedLate}</span>
                   </div>
                 </div>
                 <div style={styles.legendItem}>
@@ -521,7 +547,7 @@ const styles = {
   },
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(5, 1fr)',
     gap: 20,
   },
   kpiCard: {
@@ -619,7 +645,7 @@ const styles = {
   },
   legendGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gridTemplateColumns: 'repeat(2, 1fr)',
     gap: 16,
     width: '100%',
     maxWidth: 500

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { auth } from "../firebase";
+
 import {
   getTasksByEmployee,
   updateTaskStatus,
   acknowledgeTask,
+  listenToTasksByEmployee,
 } from "../services/taskService";
+
 
 function EmployeeDashboard({ currentUser }) {
   const [tasks, setTasks] = useState([]);
@@ -13,8 +16,19 @@ function EmployeeDashboard({ currentUser }) {
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+  if (!auth.currentUser) return;
+
+  const unsubscribe = listenToTasksByEmployee(
+    auth.currentUser.uid,
+    (data) => {
+      setTasks(data || []);
+      setLoading(false);
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
+
 
   const loadTasks = async () => {
     if (!auth.currentUser) return;
@@ -45,7 +59,9 @@ function EmployeeDashboard({ currentUser }) {
       case "pending":
         return tasks.filter(t => t.status !== "Done");
       case "completed":
-        return tasks.filter(t => t.status === "Done");
+        return tasks.filter(t => t.status === "Done" && !t.completedLate);
+      case "completed-late":
+        return tasks.filter(t => t.status === "Done" && t.completedLate === true);
       case "overdue":
         return tasks.filter(t => isOverdue(t));
       default:
@@ -58,7 +74,8 @@ function EmployeeDashboard({ currentUser }) {
   const metrics = {
     total: tasks.length,
     pending: tasks.filter(t => t.status !== "Done").length,
-    completed: tasks.filter(t => t.status === "Done").length,
+    completed: tasks.filter(t => t.status === "Done" && !t.completedLate).length,
+    completedLate: tasks.filter(t => t.status === "Done" && t.completedLate === true).length,
     overdue: tasks.filter(t => isOverdue(t)).length
   };
 
@@ -76,8 +93,15 @@ function EmployeeDashboard({ currentUser }) {
   };
 
   const getStatusBadgeColor = (task) => {
-    if (task.status === "Done") return { bg: "#F0FDF4", text: "#22C55E", label: "Completed" };
-    if (isOverdue(task)) return { bg: "#FEF2F2", text: "#EF4444", label: "Overdue" };
+    if (task.status === "Done" && task.completedLate === true) {
+      return { bg: "#FEF3C7", text: "#F59E0B", label: "Completed Late" };
+    }
+    if (task.status === "Done") {
+      return { bg: "#F0FDF4", text: "#22C55E", label: "Completed" };
+    }
+    if (isOverdue(task)) {
+      return { bg: "#FEF2F2", text: "#EF4444", label: "Overdue" };
+    }
     return { bg: "#FEFCE8", text: "#FACC15", label: "In Progress" };
   };
 
@@ -133,6 +157,7 @@ function EmployeeDashboard({ currentUser }) {
           { label: "Total Tasks", value: metrics.total, color: "#38BDF8", gradient: "linear-gradient(135deg, #38BDF8 0%, #0891B2 100%)" },
           { label: "In Progress", value: metrics.pending, color: "#FACC15", gradient: "linear-gradient(135deg, #FACC15 0%, #F59E0B 100%)" },
           { label: "Completed", value: metrics.completed, color: "#22C55E", gradient: "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)" },
+          { label: "Completed Late", value: metrics.completedLate, color: "#F59E0B", gradient: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" },
           { label: "Overdue", value: metrics.overdue, color: "#EF4444", gradient: "linear-gradient(135deg, #EF4444 0%, #DC2626 100%)" }
         ].map((metric, idx) => (
           <MetricCard key={idx} {...metric} />
@@ -145,6 +170,7 @@ function EmployeeDashboard({ currentUser }) {
             { key: "all", label: "All Tasks" },
             { key: "pending", label: "In Progress" },
             { key: "completed", label: "Completed" },
+            { key: "completed-late", label: "Completed Late" },
             { key: "overdue", label: "Overdue" }
           ].map(({ key, label }) => (
             <button
@@ -446,7 +472,7 @@ const styles = {
   },
   metricsGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
+    gridTemplateColumns: "repeat(5, 1fr)",
     gap: 24,
   },
   metricCard: {

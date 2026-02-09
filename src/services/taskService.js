@@ -1,96 +1,145 @@
 import {
   collection,
-  addDoc,
-  getDocs,
   query,
   where,
-  doc,
+  getDocs,
+  getDoc,
+  addDoc,
   updateDoc,
-  serverTimestamp
+  doc,
+  serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
 /* =====================
-   CREATE TASK (ADMIN / SUPER ADMIN)
-   🔒 HARD LOCKED – DO NOT TOUCH
+   CREATE TASK (SINGLE)
 ===================== */
 export const createTask = async ({
   title,
   organizationId,
   assignedTo,
   description,
-  deadline = null
+  deadline = null,
+  priority = "medium",
 }) => {
-  // 🔒 ABSOLUTE SAFETY CHECKS
-  if (!organizationId) {
-    throw new Error("organizationId is required to create a task");
-  }
-
-  if (!title) {
-    throw new Error("title is required to create a task");
-  }
-
-  if (!assignedTo) {
-    throw new Error("assignedTo is required to create a task");
-  }
+  if (!organizationId) throw new Error("organizationId is required");
+  if (!title) throw new Error("title is required");
+  if (!assignedTo) throw new Error("assignedTo is required");
 
   await addDoc(collection(db, "tasks"), {
     title,
     description: description || "",
     organizationId,
     assignedTo,
-
     status: "To Do",
     acknowledged: false,
-
-    deadline,          // Date | Timestamp | null
+    priority,
+    deadline,
     completedAt: null,
-
+    completedLate: false,
     createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   });
 };
 
 /* =====================
-   UPDATE TASK STATUS (EMPLOYEE)
+   CREATE TASK FOR ALL
+===================== */
+export const createTaskForAllEmployees = async ({
+  title,
+  organizationId,
+  description,
+  deadline = null,
+  priority = "medium",
+}) => {
+  const q = query(
+    collection(db, "users"),
+    where("organizationId", "==", organizationId),
+    where("role", "==", "employee")
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) throw new Error("This organization has no employees");
+
+  await Promise.all(
+    snap.docs.map((u) =>
+      addDoc(collection(db, "tasks"), {
+        title,
+        description: description || "",
+        organizationId,
+        assignedTo: u.id,
+        status: "To Do",
+        acknowledged: false,
+        priority,
+        deadline,
+        completedAt: null,
+        completedLate: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    )
+  );
+};
+
+/* =====================
+   UPDATE STATUS
 ===================== */
 export const updateTaskStatus = async (taskId, status) => {
   const ref = doc(db, "tasks", taskId);
 
   const payload = {
     status,
-    updatedAt: serverTimestamp()
+    updatedAt: serverTimestamp(),
   };
 
   if (status === "Done") {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error("Task not found");
+
+    const task = snap.data();
     payload.completedAt = serverTimestamp();
+
+    if (task.deadline) {
+      const deadline =
+        typeof task.deadline.toDate === "function"
+          ? task.deadline.toDate()
+          : new Date(task.deadline);
+
+      payload.completedLate = deadline < new Date();
+    } else {
+      payload.completedLate = false;
+    }
   }
 
   await updateDoc(ref, payload);
 };
 
 /* =====================
-   ACKNOWLEDGE TASK
+   REOPEN TASK
 ===================== */
-export const acknowledgeTask = async (taskId) => {
-  const ref = doc(db, "tasks", taskId);
-  await updateDoc(ref, {
-    acknowledged: true,
-    updatedAt: serverTimestamp()
+export const reopenTask = async (taskId) => {
+  await updateDoc(doc(db, "tasks", taskId), {
+    status: "To Do",
+    completedAt: null,
+    completedLate: false,
+    updatedAt: serverTimestamp(),
   });
 };
 
 /* =====================
-   GET TASKS
+   ACKNOWLEDGE
 ===================== */
-export const getAllTasks = async () => {
-  const snap = await getDocs(collection(db, "tasks"));
-  return snap.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+export const acknowledgeTask = async (taskId) => {
+  await updateDoc(doc(db, "tasks", taskId), {
+    acknowledged: true,
+    updatedAt: serverTimestamp(),
+  });
 };
 
+/* =====================
+   FETCH TASKS
+===================== */
 export const getTasksByOrganization = async (organizationId) => {
   if (!organizationId) return [];
 
@@ -100,10 +149,7 @@ export const getTasksByOrganization = async (organizationId) => {
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
 export const getTasksByEmployee = async (uid) => {
@@ -115,14 +161,29 @@ export const getTasksByEmployee = async (uid) => {
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 };
 
 /* =====================
-   GET EMPLOYEES (ADMIN / SUPER ADMIN)
+   REALTIME LISTENER
+===================== */
+export const listenToTasksByEmployee = (uid, callback) => {
+  if (!uid) return () => {};
+
+  const q = query(
+    collection(db, "tasks"),
+    where("assignedTo", "==", uid)
+  );
+
+  return onSnapshot(q, (snap) => {
+    callback(
+      snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    );
+  });
+};
+
+/* =====================
+   EMPLOYEES
 ===================== */
 export const getEmployeesByOrganization = async (organizationId) => {
   if (!organizationId) return [];
@@ -134,8 +195,8 @@ export const getEmployeesByOrganization = async (organizationId) => {
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map(doc => ({
-    uid: doc.id,
-    ...doc.data()
+  return snap.docs.map((d) => ({
+    uid: d.id,
+    ...d.data(),
   }));
 };

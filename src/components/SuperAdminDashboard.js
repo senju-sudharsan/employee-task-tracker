@@ -34,10 +34,14 @@ function SuperAdminDashboard({ currentUser }) {
         return d < now;
       }).length;
 
+      const completedLate = allTasks.filter((t) => t.status === "Done" && t.completedLate === true).length;
+      const completedOnTime = allTasks.filter((t) => t.status === "Done" && !t.completedLate).length;
+
       setMetrics({
         total: allTasks.length,
         pending: allTasks.filter((t) => t.status !== "Done").length,
-        completed: allTasks.filter((t) => t.status === "Done").length,
+        completed: completedOnTime,
+        completedLate,
         overdue
       });
 
@@ -57,6 +61,11 @@ function SuperAdminDashboard({ currentUser }) {
   }
 
   const displayName = currentUser?.name || currentUser?.email || "Admin";
+  
+  const totalCompleted = metrics.completed + metrics.completedLate;
+  const completionRate = metrics.total > 0 ? Math.round((totalCompleted / metrics.total) * 100) : 0;
+  const overdueRate = metrics.total > 0 ? Math.round((metrics.overdue / metrics.total) * 100) : 0;
+  const activeRate = metrics.total > 0 ? Math.round((metrics.pending / metrics.total) * 100) : 0;
 
   return (
     <div style={styles.container}>
@@ -114,7 +123,7 @@ function SuperAdminDashboard({ currentUser }) {
         <KpiCard
           label="Completed"
           value={metrics.completed}
-          subtitle="Successfully closed"
+          subtitle="On-time closures"
           icon={
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
@@ -124,6 +133,21 @@ function SuperAdminDashboard({ currentUser }) {
           color="#22C55E"
           gradient="linear-gradient(135deg, #22C55E 0%, #16A34A 100%)"
           onClick={() => navigate("/tasks?filter=completed")}
+        />
+        <KpiCard
+          label="Completed Late"
+          value={metrics.completedLate}
+          subtitle="Closed past deadline"
+          icon={
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+              <path d="M16 16l-4-4" />
+            </svg>
+          }
+          color="#F59E0B"
+          gradient="linear-gradient(135deg, #F59E0B 0%, #D97706 100%)"
+          onClick={() => navigate("/tasks?filter=completed-late")}
         />
         <KpiCard
           label="Overdue"
@@ -142,12 +166,12 @@ function SuperAdminDashboard({ currentUser }) {
         />
       </div>
 
-       <div style={styles.analyticsSection} className="section-fade-in">
+      <div style={styles.analyticsSection} className="section-fade-in">
         <div style={styles.sectionHeader}>
           <div>
-            <h2 style={styles.sectionTitle}>Quick Insights</h2>
+            <h2 style={styles.sectionTitle}>System Health</h2>
             <p style={styles.sectionDescription}>
-              High-level system performance overview
+              Key performance indicators at a glance
             </p>
           </div>
           <button
@@ -160,6 +184,119 @@ function SuperAdminDashboard({ currentUser }) {
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </button>
+        </div>
+
+        <div style={styles.insightsGrid}>
+          <div style={styles.insightCard} className="insight-card">
+            <div style={styles.insightHeader}>
+              <div style={{...styles.insightIcon, background: 'linear-gradient(135deg, #DCFCE7 0%, #BBF7D0 100%)'}}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                </svg>
+              </div>
+              <h3 style={styles.insightTitle}>Completion Rate</h3>
+            </div>
+            <p style={styles.insightDescription}>
+              Overall task completion across all organizations
+            </p>
+            
+            <div style={styles.progressRingWrapper}>
+              <ProgressRing percentage={completionRate} color="#22C55E" size={120} />
+              <div style={styles.ringCenter}>
+                <div style={{...styles.ringValue, color: '#22C55E'}}>{completionRate}%</div>
+                <div style={styles.ringLabel}>Complete</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.insightCard} className="insight-card">
+            <div style={styles.insightHeader}>
+              <div style={{...styles.insightIcon, background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)'}}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              </div>
+              <h3 style={styles.insightTitle}>Active Workload</h3>
+            </div>
+            <p style={styles.insightDescription}>
+              Tasks currently in progress across teams
+            </p>
+            
+            <div style={styles.metricsWrapper}>
+              <div style={styles.metricRow}>
+                <div style={styles.metricRowHeader}>
+                  <span style={styles.metricRowLabel}>In Progress</span>
+                  <span style={{...styles.metricRowValue, color: '#FACC15'}}>{metrics.pending}</span>
+                </div>
+                <div style={styles.progressBar}>
+                  <div 
+                    className="progress-fill"
+                    style={{...styles.progressFill, width: `${activeRate}%`, background: 'linear-gradient(90deg, #FACC15 0%, #F59E0B 100%)'}}
+                  />
+                </div>
+              </div>
+
+              <div style={styles.metricRow}>
+                <div style={styles.metricRowHeader}>
+                  <span style={styles.metricRowLabel}>Completed</span>
+                  <span style={{...styles.metricRowValue, color: '#22C55E'}}>{totalCompleted}</span>
+                </div>
+                <div style={styles.progressBar}>
+                  <div 
+                    className="progress-fill"
+                    style={{...styles.progressFill, width: `${completionRate}%`, background: 'linear-gradient(90deg, #22C55E 0%, #16A34A 100%)', animationDelay: '0.1s'}}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.insightCard} className="insight-card">
+            <div style={styles.insightHeader}>
+              <div style={{...styles.insightIcon, background: 'linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%)'}}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <h3 style={styles.insightTitle}>Risk Overview</h3>
+            </div>
+            <p style={styles.insightDescription}>
+              Tasks requiring immediate attention
+            </p>
+            
+            <div style={styles.riskMetrics}>
+              <div style={styles.riskMetricItem}>
+                <div style={{...styles.riskMetricValue, color: '#EF4444'}}>{metrics.overdue}</div>
+                <div style={styles.riskMetricLabel}>Overdue Tasks</div>
+                <div style={{...styles.riskPercentage, color: '#EF4444'}}>{overdueRate}% of total</div>
+              </div>
+              
+              <div style={styles.miniGauge}>
+                <svg width="100%" height="60" viewBox="0 0 100 60">
+                  <path
+                    d="M 10 50 A 40 40 0 0 1 90 50"
+                    fill="none"
+                    stroke="#F1F5F9"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M 10 50 A 40 40 0 0 1 90 50"
+                    fill="none"
+                    stroke="#EF4444"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(overdueRate / 100) * 126} 126`}
+                    style={{transition: 'stroke-dasharray 1s ease'}}
+                    className="gauge-fill"
+                  />
+                </svg>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -221,7 +358,38 @@ function KpiCard({ label, value, subtitle, icon, color, gradient, onClick }) {
   );
 }
 
+function ProgressRing({ percentage, color, size = 120 }) {
+  const strokeWidth = 10;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percentage / 100) * circumference;
 
+  return (
+    <svg width={size} height={size} style={{transform: 'rotate(-90deg)'}}>
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="#F1F5F9"
+        strokeWidth={strokeWidth}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{transition: 'stroke-dashoffset 1s ease'}}
+        className="ring-progress"
+      />
+    </svg>
+  );
+}
 
 const styles = {
   container: {
@@ -277,7 +445,7 @@ const styles = {
     right: -100,
     width: 400,
     height: 400,
-    background: "radial-gradient(circle, rgba(250, 204, 21, 0.15) 0%, transparent 70%)",
+    background: "radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, transparent 70%)",
     borderRadius: "50%",
     pointerEvents: "none",
   },
@@ -359,7 +527,7 @@ const styles = {
 
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(5, 1fr)',
     gap: 24,
   },
 
@@ -433,7 +601,7 @@ const styles = {
   analyticsSection: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 28,
+    gap: 32,
   },
   sectionHeader: {
     display: 'flex',
@@ -512,45 +680,30 @@ const styles = {
     color: '#64748B',
     lineHeight: 1.6,
     margin: 0,
-    marginBottom: 28,
+    marginBottom: 32,
     fontWeight: 500,
   },
 
-  miniChart: {
-    marginTop: 24,
-  },
-  barChart: {
-    display: 'flex',
-    alignItems: 'flex-end',
-    gap: 10,
-    height: 130,
-  },
-  bar: {
-    flex: 1,
-    borderRadius: '8px 8px 0 0',
-    transition: 'all 0.3s ease',
-  },
-  donutChartWrapper: {
+  progressRingWrapper: {
     position: 'relative',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    height: 140,
+    height: 120,
   },
-  donutCenter: {
+  ringCenter: {
     position: 'absolute',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  donutValue: {
+  ringValue: {
     fontSize: 26,
     fontWeight: 800,
-    color: '#0F172A',
     letterSpacing: '-1px',
   },
-  donutLabel: {
+  ringLabel: {
     fontSize: 12,
     color: '#64748B',
     fontWeight: 600,
@@ -560,8 +713,7 @@ const styles = {
   metricsWrapper: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 18,
-    marginTop: 24,
+    gap: 24,
   },
   metricRow: {
     display: 'flex',
@@ -579,12 +731,12 @@ const styles = {
     color: '#64748B',
   },
   metricRowValue: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 800,
     letterSpacing: '-0.5px',
   },
   progressBar: {
-    height: 8,
+    height: 10,
     background: '#F1F5F9',
     borderRadius: 100,
     overflow: 'hidden',
@@ -593,7 +745,40 @@ const styles = {
     height: '100%',
     borderRadius: 100,
     transition: 'width 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
-    boxShadow: '0 0 8px currentColor',
+  },
+
+  riskMetrics: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 20,
+  },
+  riskMetricItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 6,
+  },
+  riskMetricValue: {
+    fontSize: 36,
+    fontWeight: 800,
+    letterSpacing: '-1.5px',
+    lineHeight: 1,
+  },
+  riskMetricLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: 600,
+  },
+  riskPercentage: {
+    fontSize: 12,
+    fontWeight: 700,
+    marginTop: 2,
+  },
+  miniGauge: {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'center',
+    marginTop: 8,
   },
 };
 
@@ -634,10 +819,6 @@ if (typeof document !== 'undefined') {
       }
     }
     
-    @keyframes mini-bar-grow {
-      from { height: 0; }
-    }
-    
     .hero-fade-in {
       animation: hero-fade-in 0.8s cubic-bezier(0.4, 0, 0.2, 1);
     }
@@ -668,32 +849,28 @@ if (typeof document !== 'undefined') {
       transform: translateY(-4px);
     }
     
-    .mini-bar {
-      animation: mini-bar-grow 0.8s cubic-bezier(0.4, 0, 0.2, 1) backwards;
-    }
-    
-    .mini-bar:nth-child(1) { animation-delay: 0.1s; }
-    .mini-bar:nth-child(2) { animation-delay: 0.15s; }
-    .mini-bar:nth-child(3) { animation-delay: 0.2s; }
-    .mini-bar:nth-child(4) { animation-delay: 0.25s; }
-    .mini-bar:nth-child(5) { animation-delay: 0.3s; }
-    .mini-bar:nth-child(6) { animation-delay: 0.35s; }
-    
-    .mini-donut {
-      animation: donut-draw 1.2s cubic-bezier(0.4, 0, 0.2, 1) backwards;
-    }
-    
-    @keyframes donut-draw {
-      from { stroke-dashoffset: 314; }
-      to { stroke-dashoffset: 0; }
-    }
-    
     .progress-fill {
       animation: progress-grow 1.2s cubic-bezier(0.4, 0, 0.2, 1) backwards;
     }
     
     @keyframes progress-grow {
       from { width: 0; }
+    }
+    
+    .ring-progress {
+      animation: ring-draw 1.2s cubic-bezier(0.4, 0, 0.2, 1) backwards;
+    }
+    
+    @keyframes ring-draw {
+      from { stroke-dashoffset: 314; }
+    }
+    
+    .gauge-fill {
+      animation: gauge-fill 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.2s backwards;
+    }
+    
+    @keyframes gauge-fill {
+      from { stroke-dasharray: 0 126; }
     }
     
     * {
