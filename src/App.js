@@ -39,6 +39,9 @@ function App() {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔒 Portal mode (super | app)
+  const PORTAL_MODE = process.env.REACT_APP_PORTAL_MODE;
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
@@ -65,7 +68,12 @@ function App() {
           if (org?.status) orgStatus = org.status;
         }
 
-        setUser({ uid: firebaseUser.uid, ...profile, orgStatus });
+        setUser({
+          uid: firebaseUser.uid,
+          ...profile,
+          orgStatus
+        });
+
         setRole(normalizedRole);
       } catch {
         await signOut(auth);
@@ -80,6 +88,31 @@ function App() {
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
   if (!user || !role) return <LoginPage />;
 
+  /* ===========================
+     🔐 PORTAL ISOLATION LOGIC
+  =========================== */
+
+  // Super portal → only super admins allowed
+  if (PORTAL_MODE === "super" && role !== "super_admin") {
+    return (
+      <div style={{ padding: 40 }}>
+        Access denied. This portal is restricted to Super Admins.
+      </div>
+    );
+  }
+
+  // App portal → super admins blocked
+  if (PORTAL_MODE === "app" && role === "super_admin") {
+    return (
+      <div style={{ padding: 40 }}>
+        Please use the Super Admin portal to access this account.
+      </div>
+    );
+  }
+
+  /* ===========================
+     ORG DISABLED CHECK
+  =========================== */
   if (
     role !== "super_admin" &&
     user.organizationId &&
@@ -89,9 +122,17 @@ function App() {
   }
 
   const DashboardByRole = () => {
-    if (role === "super_admin") return <SuperAdminDashboard currentUser={user} />;
+    if (role === "super_admin")
+      return <SuperAdminDashboard currentUser={user} />;
+
     if (role === "admin")
-      return <AdminDashboard organizationId={user.organizationId} currentUser={user} />;
+      return (
+        <AdminDashboard
+          organizationId={user.organizationId}
+          currentUser={user}
+        />
+      );
+
     return <Navigate to="/tasks" replace />;
   };
 
@@ -116,12 +157,12 @@ function App() {
           }
         />
 
-        {/* SUPER ADMIN */}
+        {/* SUPER ADMIN ROUTES */}
         {role === "super_admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />
-            <Route path="/users" element={<UsersPage organizationId={null} />} />
+            <Route path="/users" element={<UsersPage />} />
             <Route
               path="/analytics"
               element={
@@ -135,14 +176,11 @@ function App() {
           </>
         )}
 
-        {/* ADMIN */}
+        {/* ADMIN ROUTES */}
         {role === "admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
-            <Route
-              path="/employees"
-              element={<UsersPage organizationId={user.organizationId} />}
-            />
+            <Route path="/employees" element={<UsersPage />} />
             <Route
               path="/analytics"
               element={
@@ -156,7 +194,7 @@ function App() {
           </>
         )}
 
-        {/* EMPLOYEE */}
+        {/* EMPLOYEE ROUTES */}
         {role === "employee" && (
           <>
             <Route path="/tasks" element={<EmployeeDashboard currentUser={user} />} />
