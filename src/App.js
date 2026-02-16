@@ -9,6 +9,7 @@ import { getOrganizationById } from "./services/organizationService";
 import Layout from "./components/Layout";
 import LoginPage from "./pages/LoginPage";
 import OrganizationDisabledPage from "./pages/OrganizationDisabledPage";
+import AccessDeniedPage from "./pages/AccessDeniedPage";
 
 import SuperAdminDashboard from "./components/SuperAdminDashboard";
 import AdminDashboard from "./components/AdminDashboard";
@@ -63,6 +64,7 @@ function App() {
         }
 
         let orgStatus = "active";
+
         if (profile.organizationId) {
           const org = await getOrganizationById(profile.organizationId);
           if (org?.status) orgStatus = org.status;
@@ -85,6 +87,10 @@ function App() {
     return () => unsub();
   }, []);
 
+  /* ===========================
+     GLOBAL STATE HANDLING
+  =========================== */
+
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
   if (!user || !role) return <LoginPage />;
 
@@ -94,20 +100,12 @@ function App() {
 
   // Super portal → only super admins allowed
   if (PORTAL_MODE === "super" && role !== "super_admin") {
-    return (
-      <div style={{ padding: 40 }}>
-        Access denied. This portal is restricted to Super Admins.
-      </div>
-    );
+    return <AccessDeniedPage />;
   }
 
   // App portal → super admins blocked
   if (PORTAL_MODE === "app" && role === "super_admin") {
-    return (
-      <div style={{ padding: 40 }}>
-        Please use the Super Admin portal to access this account.
-      </div>
-    );
+    return <AccessDeniedPage />;
   }
 
   /* ===========================
@@ -121,21 +119,29 @@ function App() {
     return <OrganizationDisabledPage />;
   }
 
+  /* ===========================
+     DASHBOARD RESOLVER
+  =========================== */
   const DashboardByRole = () => {
-    if (role === "super_admin")
+    if (role === "super_admin") {
       return <SuperAdminDashboard currentUser={user} />;
+    }
 
-    if (role === "admin")
+    if (role === "admin") {
       return (
         <AdminDashboard
           organizationId={user.organizationId}
           currentUser={user}
         />
       );
+    }
 
     return <Navigate to="/tasks" replace />;
   };
 
+  /* ===========================
+     ROUTING
+  =========================== */
   return (
     <Layout role={role} onLogout={() => signOut(auth)}>
       <Routes>
@@ -197,7 +203,10 @@ function App() {
         {/* EMPLOYEE ROUTES */}
         {role === "employee" && (
           <>
-            <Route path="/tasks" element={<EmployeeDashboard currentUser={user} />} />
+            <Route
+              path="/tasks"
+              element={<EmployeeDashboard currentUser={user} />}
+            />
             <Route path="/insights" element={<EmployeeInsightsPage />} />
           </>
         )}
