@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
-  signOut,
+  
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { getUserProfile } from "../services/authService";
+
 
 
 const BG_ABSTRACT   = "/auth/auth-bg-abstract.svg";

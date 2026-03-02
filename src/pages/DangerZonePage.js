@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { auth, db } from "../firebase";
 import {
   collection,
@@ -263,43 +263,56 @@ function DangerZonePage({ currentUser }) {
   const isAdmin      = currentUser?.role === "admin";
   const hasAccess    = isSuperAdmin || isAdmin;
 
-  const fetchOrganizations = async () => {
-    if (!isSuperAdmin) return;
-    const snap = await getDocs(collection(db, "organizations"));
-    const orgs = [];
-    snap.forEach((docSnap) => orgs.push({ id: docSnap.id, ...docSnap.data() }));
-    setOrganizations(orgs);
-  };
+  const fetchOrganizations = useCallback(async () => {
+  if (!isSuperAdmin) return;
+  const snap = await getDocs(collection(db, "organizations"));
+  const orgs = [];
+  snap.forEach((docSnap) =>
+    orgs.push({ id: docSnap.id, ...docSnap.data() })
+  );
+  setOrganizations(orgs);
+}, [isSuperAdmin]);
 
-  const fetchUsers = async (orgId) => {
-    if (!orgId) return;
-    const q    = query(collection(db, "users"), where("organizationId", "==", orgId));
-    const snap = await getDocs(q);
-    const active = []; const deleted = [];
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      if (data.role === "super_admin") return;
-      if (data.status === "Deleted") {
-        deleted.push(data);
-      } else {
-        if (isAdmin && data.role === "admin") return;
-        if (data.uid === currentUser.uid)     return;
-        active.push(data);
-      }
-    });
-    setUsers(active);
-    setDeletedUsers(deleted);
-  };
+ const fetchUsers = useCallback(async (orgId) => {
+  if (!orgId) return;
+
+  const q = query(
+    collection(db, "users"),
+    where("organizationId", "==", orgId)
+  );
+
+  const snap = await getDocs(q);
+
+  const active = [];
+  const deleted = [];
+
+  snap.forEach((docSnap) => {
+    const data = docSnap.data();
+
+    if (data.role === "super_admin") return;
+
+    if (data.status === "Deleted") {
+      deleted.push(data);
+    } else {
+      if (isAdmin && data.role === "admin") return;
+      if (data.uid === currentUser.uid) return;
+      active.push(data);
+    }
+  });
+
+  setUsers(active);
+  setDeletedUsers(deleted);
+}, [isAdmin, currentUser]);
 
   useEffect(() => {
     if (!hasAccess) return;
     if (isSuperAdmin) fetchOrganizations();
     if (isAdmin) { setSelectedOrg(currentUser.organizationId); fetchUsers(currentUser.organizationId); }
-  }, [currentUser]);
+  }, [hasAccess, isSuperAdmin, isAdmin, currentUser, fetchOrganizations, fetchUsers]);
 
   useEffect(() => {
     if (isSuperAdmin && selectedOrg) fetchUsers(selectedOrg);
-  }, [selectedOrg]);
+  }, [selectedOrg, isSuperAdmin, fetchUsers]);
 
   const handleDelete = async () => {
     if (!selectedUser) return;
@@ -351,7 +364,7 @@ function DangerZonePage({ currentUser }) {
   }
 
   const msgIsSuccess = message.startsWith("success:");
-  const msgIsError   = message.startsWith("error:");
+  
   const msgText      = message.replace(/^(success|error):/, "");
   const selectedUserObj = users.find((u) => u.uid === selectedUser);
 
