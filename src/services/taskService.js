@@ -6,15 +6,33 @@ import {
   getDoc,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   serverTimestamp,
   onSnapshot,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
-/* =====================
+/* ============================================================
+   INTERNAL HELPERS
+============================================================ */
+
+const toDate = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  return new Date(value);
+};
+
+const isOverdue = (task) => {
+  if (!task.deadline || task.status === "Done") return false;
+  const deadline = toDate(task.deadline);
+  return deadline && deadline < new Date();
+};
+
+/* ============================================================
    CREATE TASK (SINGLE)
-===================== */
+============================================================ */
+
 export const createTask = async ({
   title,
   organizationId,
@@ -38,14 +56,16 @@ export const createTask = async ({
     deadline,
     completedAt: null,
     completedLate: false,
+    archived: false, // ✅ NEW
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 };
 
-/* =====================
-   CREATE TASK FOR ALL
-===================== */
+/* ============================================================
+   CREATE TASK FOR ALL EMPLOYEES
+============================================================ */
+
 export const createTaskForAllEmployees = async ({
   title,
   organizationId,
@@ -75,6 +95,7 @@ export const createTaskForAllEmployees = async ({
         deadline,
         completedAt: null,
         completedLate: false,
+        archived: false, // ✅ NEW
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -82,9 +103,10 @@ export const createTaskForAllEmployees = async ({
   );
 };
 
-/* =====================
+/* ============================================================
    UPDATE STATUS
-===================== */
+============================================================ */
+
 export const updateTaskStatus = async (taskId, status) => {
   const ref = doc(db, "tasks", taskId);
 
@@ -101,11 +123,7 @@ export const updateTaskStatus = async (taskId, status) => {
     payload.completedAt = serverTimestamp();
 
     if (task.deadline) {
-      const deadline =
-        typeof task.deadline.toDate === "function"
-          ? task.deadline.toDate()
-          : new Date(task.deadline);
-
+      const deadline = toDate(task.deadline);
       payload.completedLate = deadline < new Date();
     } else {
       payload.completedLate = false;
@@ -115,9 +133,10 @@ export const updateTaskStatus = async (taskId, status) => {
   await updateDoc(ref, payload);
 };
 
-/* =====================
+/* ============================================================
    REOPEN TASK
-===================== */
+============================================================ */
+
 export const reopenTask = async (taskId) => {
   await updateDoc(doc(db, "tasks", taskId), {
     status: "To Do",
@@ -127,9 +146,10 @@ export const reopenTask = async (taskId) => {
   });
 };
 
-/* =====================
-   ACKNOWLEDGE
-===================== */
+/* ============================================================
+   ACKNOWLEDGE TASK
+============================================================ */
+
 export const acknowledgeTask = async (taskId) => {
   await updateDoc(doc(db, "tasks", taskId), {
     acknowledged: true,
@@ -137,9 +157,111 @@ export const acknowledgeTask = async (taskId) => {
   });
 };
 
-/* =====================
-   FETCH TASKS
-===================== */
+/* ============================================================
+   CLEANUP OLD COMPLETED TASKS (ARCHIVE INSTEAD OF DELETE)
+============================================================ */
+
+export const cleanupOldCompletedTasks = async () => {
+  const snap = await getDocs(collection(db, "tasks"));
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(
+    now.getTime() - 7 * 24 * 60 * 60 * 1000
+  );
+
+  const updates = [];
+
+  snap.docs.forEach((d) => {
+    const task = d.data();
+
+    if (
+      task.status === "Done" &&
+      task.completedAt &&
+      typeof task.completedAt.toDate === "function" &&
+      task.archived !== true
+    ) {
+      const completedDate = task.completedAt.toDate();
+
+      if (completedDate < sevenDaysAgo) {
+        updates.push(
+          updateDoc(doc(db, "tasks", d.id), {
+            archived: true,
+            updatedAt: serverTimestamp(),
+          })
+        );
+      }
+    }
+  });
+
+  if (updates.length > 0) {
+    await Promise.all(updates);
+  }
+};
+
+/* ============================================================
+   CENTRALIZED 7-DAY FILTER
+============================================================ */
+
+export const filterTasksLast7Days = (tasks = []) => {
+  const now = new Date();
+  const sevenDaysAgo = new Date(
+    now.getTime() - 7 * 24 * 60 * 60 * 1000
+  );
+
+  return tasks.filter((task) => {
+    if (task.archived === true) return false;
+
+    const createdAt = toDate(task.createdAt);
+    const completedAt = toDate(task.completedAt);
+
+    const createdInWindow =
+      createdAt && createdAt >= sevenDaysAgo;
+
+    const completedInWindow =
+      completedAt && completedAt >= sevenDaysAgo;
+
+    return createdInWindow || completedInWindow;
+  });
+};
+
+/* ============================================================
+   CENTRALIZED METRICS CALCULATION
+============================================================ */
+
+export const computeTaskMetrics = (tasks = []) => {
+  const total = tasks.length;
+
+  const completed = tasks.filter(
+    (t) => t.status === "Done"
+  ).length;
+
+  const completedLate = tasks.filter(
+    (t) => t.status === "Done" && t.completedLate === true
+  ).length;
+
+  const inProgress = tasks.filter(
+    (t) => t.status !== "Done"
+  ).length;
+
+  const overdue = tasks.filter(isOverdue).length;
+
+  const completionRate =
+    total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  return {
+    total,
+    completed,
+    completedLate,
+    inProgress,
+    overdue,
+    completionRate,
+  };
+};
+
+/* ============================================================
+   FETCH TASKS (BACKWARD COMPATIBLE)
+============================================================ */
+
 export const getTasksByOrganization = async (organizationId) => {
   if (!organizationId) return [];
 
@@ -149,7 +271,10 @@ export const getTasksByOrganization = async (organizationId) => {
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 };
 
 export const getTasksByEmployee = async (uid) => {
@@ -161,12 +286,16 @@ export const getTasksByEmployee = async (uid) => {
   );
 
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 };
 
-/* =====================
-   REALTIME LISTENER
-===================== */
+/* ============================================================
+   REALTIME LISTENERS
+============================================================ */
+
 export const listenToTasksByEmployee = (uid, callback) => {
   if (!uid) return () => {};
 
@@ -177,15 +306,42 @@ export const listenToTasksByEmployee = (uid, callback) => {
 
   return onSnapshot(q, (snap) => {
     callback(
-      snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
     );
   });
 };
 
-/* =====================
+export const listenToTasksByOrganization = (
+  organizationId,
+  callback
+) => {
+  if (!organizationId) return () => {};
+
+  const q = query(
+    collection(db, "tasks"),
+    where("organizationId", "==", organizationId)
+  );
+
+  return onSnapshot(q, (snap) => {
+    callback(
+      snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }))
+    );
+  });
+};
+
+/* ============================================================
    EMPLOYEES
-===================== */
-export const getEmployeesByOrganization = async (organizationId) => {
+============================================================ */
+
+export const getEmployeesByOrganization = async (
+  organizationId
+) => {
   if (!organizationId) return [];
 
   const q = query(
@@ -195,6 +351,7 @@ export const getEmployeesByOrganization = async (organizationId) => {
   );
 
   const snap = await getDocs(q);
+
   return snap.docs.map((d) => ({
     uid: d.id,
     ...d.data(),

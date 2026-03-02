@@ -16,19 +16,18 @@ function EmployeeDashboard({ currentUser }) {
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-  if (!auth.currentUser) return;
+    if (!auth.currentUser) return;
 
-  const unsubscribe = listenToTasksByEmployee(
-    auth.currentUser.uid,
-    (data) => {
-      setTasks(data || []);
-      setLoading(false);
-    }
-  );
+    const unsubscribe = listenToTasksByEmployee(
+      auth.currentUser.uid,
+      (data) => {
+        setTasks(data || []);
+        setLoading(false);
+      }
+    );
 
-  return () => unsubscribe();
-}, []);
-
+    return () => unsubscribe();
+  }, []);
 
   const loadTasks = async () => {
     if (!auth.currentUser) return;
@@ -38,14 +37,37 @@ function EmployeeDashboard({ currentUser }) {
     setLoading(false);
   };
 
+  // ─── 7-day rolling window helpers ───────────────────────────────────────────
+
+  const toDate = (val) => {
+    if (!val) return null;
+    if (typeof val.toDate === "function") return val.toDate();
+    return new Date(val);
+  };
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // A task is visible if:
+  //   - it is NOT done (active), OR
+  //   - it IS done and was completed within the last 7 days
+  const isVisible = (task) => {
+    if (task.status !== "Done") return true;
+    const completed = toDate(task.completedAt);
+    return completed && completed >= sevenDaysAgo;
+  };
+
+  // Single filtered base — all other derivations come from here
+  const visibleTasks = tasks.filter(isVisible);
+
+  // ─── Overdue check (unchanged logic, applied to visible tasks) ───────────────
+
   const isOverdue = (task) => {
     if (!task.deadline || task.status === "Done") return false;
-    const d =
-      typeof task.deadline.toDate === "function"
-        ? task.deadline.toDate()
-        : new Date(task.deadline);
-    return d < new Date();
+    const d = toDate(task.deadline);
+    return d && d < new Date();
   };
+
+  // ─── Actions ────────────────────────────────────────────────────────────────
 
   const act = async (fn, id) => {
     setSavingId(id);
@@ -54,68 +76,70 @@ function EmployeeDashboard({ currentUser }) {
     setSavingId(null);
   };
 
+  // ─── Filtering (derived from visibleTasks) ───────────────────────────────────
+
   const getFilteredTasks = () => {
     switch (filter) {
       case "pending":
-        return tasks.filter(t => t.status !== "Done");
+        return visibleTasks.filter(t => t.status !== "Done");
       case "completed":
-        return tasks.filter(t => t.status === "Done" && !t.completedLate);
+        return visibleTasks.filter(t => t.status === "Done" && !t.completedLate);
       case "completed-late":
-        return tasks.filter(t => t.status === "Done" && t.completedLate === true);
+        return visibleTasks.filter(t => t.status === "Done" && t.completedLate === true);
       case "overdue":
-        return tasks.filter(t => isOverdue(t));
+        return visibleTasks.filter(t => isOverdue(t));
       default:
-        return tasks;
+        return visibleTasks;
     }
   };
 
   const filteredTasks = getFilteredTasks();
 
-  const metrics = {
-    total: tasks.length,
-    pending: tasks.filter(t => t.status !== "Done").length,
-    completed: tasks.filter(t => t.status === "Done" && !t.completedLate).length,
-    completedLate: tasks.filter(t => t.status === "Done" && t.completedLate === true).length,
-    overdue: tasks.filter(t => isOverdue(t)).length
-  };
+  // ─── Metrics (all derived from visibleTasks — single pass) ──────────────────
+
+  const metrics = visibleTasks.reduce(
+    (acc, t) => {
+      acc.total++;
+      if (t.status !== "Done") acc.pending++;
+      if (t.status === "Done" && !t.completedLate) acc.completed++;
+      if (t.status === "Done" && t.completedLate === true) acc.completedLate++;
+      if (isOverdue(t)) acc.overdue++;
+      return acc;
+    },
+    { total: 0, pending: 0, completed: 0, completedLate: 0, overdue: 0 }
+  );
+
+  // ─── Formatting helpers ──────────────────────────────────────────────────────
 
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
-      case "high":
-        return "#EF4444";
-      case "medium":
-        return "#FACC15";
-      case "low":
-        return "#38BDF8";
-      default:
-        return "#64748B";
+      case "high":   return "#EF4444";
+      case "medium": return "#FACC15";
+      case "low":    return "#38BDF8";
+      default:       return "#64748B";
     }
   };
 
   const getStatusBadgeColor = (task) => {
-    if (task.status === "Done" && task.completedLate === true) {
+    if (task.status === "Done" && task.completedLate === true)
       return { bg: "#FEF3C7", text: "#F59E0B", label: "Completed Late" };
-    }
-    if (task.status === "Done") {
+    if (task.status === "Done")
       return { bg: "#F0FDF4", text: "#22C55E", label: "Completed" };
-    }
-    if (isOverdue(task)) {
+    if (isOverdue(task))
       return { bg: "#FEF2F2", text: "#EF4444", label: "Overdue" };
-    }
     return { bg: "#FEFCE8", text: "#FACC15", label: "In Progress" };
   };
 
   const formatDate = (deadline) => {
     if (!deadline) return "No deadline";
-    const d = typeof deadline.toDate === "function" ? deadline.toDate() : new Date(deadline);
+    const d = toDate(deadline);
     const now = new Date();
     const diff = d - now;
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
     if (days < 0) return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (days === 0) return "Today";
     if (days === 1) return "Tomorrow";
-    if (days < 7) return `${days} days`;
+    if (days < 7)  return `${days} days`;
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
@@ -144,6 +168,16 @@ function EmployeeDashboard({ currentUser }) {
             <p style={styles.subtitle}>Manage and track your assigned tasks</p>
           </div>
           <div style={styles.headerRight}>
+            {/* 7-day rolling window indicator */}
+            <div style={styles.windowBadge}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span>Active + last 7 days</span>
+            </div>
             <div style={styles.liveIndicator}>
               <div style={styles.liveDot} />
               <span style={styles.liveText}>Live Data</span>
@@ -154,11 +188,11 @@ function EmployeeDashboard({ currentUser }) {
 
       <div style={styles.metricsGrid} className="metrics-fade-in">
         {[
-          { label: "Total Tasks", value: metrics.total, color: "#38BDF8", gradient: "linear-gradient(135deg, #38BDF8 0%, #0891B2 100%)" },
-          { label: "In Progress", value: metrics.pending, color: "#FACC15", gradient: "linear-gradient(135deg, #FACC15 0%, #F59E0B 100%)" },
-          { label: "Completed", value: metrics.completed, color: "#22C55E", gradient: "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)" },
-          { label: "Completed Late", value: metrics.completedLate, color: "#F59E0B", gradient: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" },
-          { label: "Overdue", value: metrics.overdue, color: "#EF4444", gradient: "linear-gradient(135deg, #EF4444 0%, #DC2626 100%)" }
+          { label: "Total Tasks",     value: metrics.total,         color: "#38BDF8", gradient: "linear-gradient(135deg, #38BDF8 0%, #0891B2 100%)" },
+          { label: "In Progress",     value: metrics.pending,       color: "#FACC15", gradient: "linear-gradient(135deg, #FACC15 0%, #F59E0B 100%)" },
+          { label: "Completed",       value: metrics.completed,     color: "#22C55E", gradient: "linear-gradient(135deg, #22C55E 0%, #16A34A 100%)" },
+          { label: "Completed Late",  value: metrics.completedLate, color: "#F59E0B", gradient: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)" },
+          { label: "Overdue",         value: metrics.overdue,       color: "#EF4444", gradient: "linear-gradient(135deg, #EF4444 0%, #DC2626 100%)" }
         ].map((metric, idx) => (
           <MetricCard key={idx} {...metric} />
         ))}
@@ -167,11 +201,11 @@ function EmployeeDashboard({ currentUser }) {
       <div style={styles.filterSection} className="section-fade-in">
         <div style={styles.filterButtons}>
           {[
-            { key: "all", label: "All Tasks" },
-            { key: "pending", label: "In Progress" },
-            { key: "completed", label: "Completed" },
+            { key: "all",            label: "All Tasks" },
+            { key: "pending",        label: "In Progress" },
+            { key: "completed",      label: "Completed" },
             { key: "completed-late", label: "Completed Late" },
-            { key: "overdue", label: "Overdue" }
+            { key: "overdue",        label: "Overdue" }
           ].map(({ key, label }) => (
             <button
               key={key}
@@ -195,12 +229,14 @@ function EmployeeDashboard({ currentUser }) {
           </svg>
           <p style={styles.emptyTitle}>No tasks found</p>
           <p style={styles.emptySubtext}>
-            {filter === "all" ? "You have no tasks assigned yet" : `No ${filter} tasks`}
+            {filter === "all"
+              ? "No active tasks or recent completions in the last 7 days"
+              : `No ${filter.replace("-", " ")} tasks in the last 7 days`}
           </p>
         </div>
       ) : (
         <div style={styles.tasksList} className="section-fade-in">
-          {filteredTasks.map((task, idx) => {
+          {filteredTasks.map((task) => {
             const overdue = isOverdue(task);
             const statusBadge = getStatusBadgeColor(task);
             const isSaving = savingId === task.id;
@@ -211,30 +247,24 @@ function EmployeeDashboard({ currentUser }) {
                   <div style={styles.taskHeaderLeft}>
                     <h3 style={styles.taskTitle}>{task.title}</h3>
                     <div style={styles.badgeGroup}>
-                      <span 
-                        style={{
-                          ...styles.statusBadge,
-                          backgroundColor: statusBadge.bg,
-                          color: statusBadge.text
-                        }}
-                      >
+                      <span style={{
+                        ...styles.statusBadge,
+                        backgroundColor: statusBadge.bg,
+                        color: statusBadge.text
+                      }}>
                         {statusBadge.label}
                       </span>
                       {task.priority && (
-                        <span 
-                          style={{
-                            ...styles.priorityBadge,
-                            borderColor: getPriorityColor(task.priority),
-                            color: getPriorityColor(task.priority)
-                          }}
-                        >
+                        <span style={{
+                          ...styles.priorityBadge,
+                          borderColor: getPriorityColor(task.priority),
+                          color: getPriorityColor(task.priority)
+                        }}>
                           {task.priority}
                         </span>
                       )}
                       {!task.acknowledged && (
-                        <span style={styles.newBadge}>
-                          New
-                        </span>
+                        <span style={styles.newBadge}>New</span>
                       )}
                     </div>
                   </div>
@@ -244,7 +274,7 @@ function EmployeeDashboard({ currentUser }) {
                         ...styles.deadlineChip,
                         ...(overdue ? styles.deadlineChipOverdue : {})
                       }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{flexShrink: 0}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                           <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                         </svg>
                         <span>{formatDate(task.deadline)}</span>
@@ -340,7 +370,7 @@ function MetricCard({ label, value, color, gradient }) {
       style={{
         ...styles.metricCard,
         transform: isHovered ? 'translateY(-6px) scale(1.02)' : 'translateY(0) scale(1)',
-        boxShadow: isHovered 
+        boxShadow: isHovered
           ? `0 16px 32px rgba(0, 0, 0, 0.1), 0 0 0 3px ${color}20, 0 0 16px ${color}30`
           : '0 2px 8px rgba(0, 0, 0, 0.06)',
       }}
@@ -350,7 +380,7 @@ function MetricCard({ label, value, color, gradient }) {
       <div style={styles.metricContent}>
         <span style={styles.metricLabel}>{label}</span>
         <span style={{
-          ...styles.metricValue, 
+          ...styles.metricValue,
           background: isHovered ? gradient : "transparent",
           WebkitBackgroundClip: isHovered ? "text" : "unset",
           WebkitTextFillColor: isHovered ? "transparent" : color,
@@ -403,9 +433,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  headerLeft: {
-    flex: 1,
-  },
+  headerLeft: { flex: 1 },
   welcomeBadge: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -446,6 +474,22 @@ const styles = {
   },
   headerRight: {
     paddingTop: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  windowBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '7px 14px',
+    background: '#F8FAFC',
+    borderRadius: 100,
+    border: '1px solid #E2E8F0',
+    fontSize: 12,
+    fontWeight: 500,
+    color: '#64748B',
   },
   liveIndicator: {
     display: 'flex',
@@ -487,10 +531,7 @@ const styles = {
   },
   metricGlow: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     background: "radial-gradient(circle at top right, rgba(56, 189, 248, 0.08) 0%, transparent 70%)",
     opacity: 0,
     transition: "opacity 0.4s ease",
@@ -516,9 +557,7 @@ const styles = {
     letterSpacing: '-1.8px',
     transition: 'all 0.4s ease',
   },
-  filterSection: {
-    marginBottom: 0,
-  },
+  filterSection: { marginBottom: 0 },
   filterButtons: {
     display: "flex",
     gap: 14,
@@ -564,10 +603,7 @@ const styles = {
     gap: 18,
     flexWrap: "wrap"
   },
-  taskHeaderLeft: {
-    flex: 1,
-    minWidth: 0
-  },
+  taskHeaderLeft: { flex: 1, minWidth: 0 },
   taskTitle: {
     fontSize: 20,
     fontWeight: 700,
@@ -693,10 +729,7 @@ const styles = {
     borderRadius: 16,
     border: "1px solid #E5E7EB"
   },
-  emptyIcon: {
-    marginBottom: 24,
-    opacity: 0.35
-  },
+  emptyIcon: { marginBottom: 24, opacity: 0.35 },
   emptyTitle: {
     fontSize: 19,
     fontWeight: 700,
@@ -784,7 +817,7 @@ styleSheet.textContent = `
     height: 14px;
     border: 2px solid rgba(255,255,255,0.3);
     border-top-color: currentColor;
-    borderRadius: 50%;
+    border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
   

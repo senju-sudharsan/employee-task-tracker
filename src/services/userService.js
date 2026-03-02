@@ -1,27 +1,31 @@
-import { db, auth } from "../firebase";
+import { db, secondaryAuth } from "../firebase";
 import {
   collection,
   getDocs,
   doc,
   setDoc,
-  serverTimestamp
+  serverTimestamp,
+  updateDoc,
+  getDoc
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 
 /* ===========================
-   GET ALL USERS
+   GET ALL USERS (Active Only)
 =========================== */
 export const getAllUsers = async () => {
   const snap = await getDocs(collection(db, "users"));
-  return snap.docs.map(d => ({
-    id: d.id,
-    ...d.data()
-  }));
+
+  return snap.docs
+    .map(d => ({
+      id: d.id,
+      ...d.data()
+    }))
+    .filter(user => user.status === "Active");
 };
 
 /* ===========================
    CREATE EMPLOYEE
-   (ADMIN & SUPER ADMIN)
 =========================== */
 export const createEmployee = async ({
   name,
@@ -34,11 +38,14 @@ export const createEmployee = async ({
     throw new Error("All fields are required");
   }
 
-  // 1️⃣ Create Auth account
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const cred = await createUserWithEmailAndPassword(
+    secondaryAuth,
+    email,
+    password
+  );
+
   const uid = cred.user.uid;
 
-  // 2️⃣ Create Firestore profile (UID === DOC ID)
   await setDoc(doc(db, "users", uid), {
     uid,
     name,
@@ -55,9 +62,8 @@ export const createEmployee = async ({
 
 /* ===========================
    CREATE ADMIN
-   (SUPER ADMIN ONLY)
 =========================== */
-export const createAdmin = async ({
+export const createAdminUser = async ({
   name,
   email,
   password,
@@ -68,7 +74,12 @@ export const createAdmin = async ({
     throw new Error("All fields are required");
   }
 
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  const cred = await createUserWithEmailAndPassword(
+    secondaryAuth,
+    email,
+    password
+  );
+
   const uid = cred.user.uid;
 
   await setDoc(doc(db, "users", uid), {
@@ -83,4 +94,87 @@ export const createAdmin = async ({
   });
 
   return uid;
+};
+
+/* ===========================
+   SOFT DELETE USER (Hybrid Secure)
+=========================== */
+export const softDeleteUser = async ({
+  targetUserId,
+  currentUser
+}) => {
+  if (!targetUserId) {
+    throw new Error("User ID required");
+  }
+
+  if (!currentUser) {
+    throw new Error("Unauthorized");
+  }
+
+  // Prevent self deletion
+  if (targetUserId === currentUser.uid) {
+    throw new Error("You cannot delete yourself");
+  }
+
+  // Fetch current user profile
+  const currentRef = doc(db, "users", currentUser.uid);
+  const currentSnap = await getDoc(currentRef);
+
+  if (!currentSnap.exists()) {
+    throw new Error("Unauthorized");
+  }
+
+  const currentData = currentSnap.data();
+
+  // Fetch target user profile
+  const targetRef = doc(db, "users", targetUserId);
+  const targetSnap = await getDoc(targetRef);
+
+  if (!targetSnap.exists()) {
+    throw new Error("User not found");
+  }
+
+  const targetData = targetSnap.data();
+
+  // Already deleted
+  if (targetData.status !== "Active") {
+    throw new Error("User not found");
+  }
+
+  /* ===========================
+     PERMISSION LOGIC
+  ============================ */
+
+  // SUPER ADMIN
+  if (currentData.role === "super_admin") {
+    if (targetData.role === "super_admin") {
+      throw new Error("Cannot delete another Super Admin");
+    }
+  }
+
+  // ADMIN
+  else if (currentData.role === "admin") {
+    if (targetData.role !== "employee") {
+      throw new Error("Unauthorized");
+    }
+
+    if (currentData.organizationId !== targetData.organizationId) {
+      throw new Error("Unauthorized");
+    }
+  }
+
+  // EMPLOYEE
+  else {
+    throw new Error("Unauthorized");
+  }
+
+  /* ===========================
+     SOFT DELETE
+  ============================ */
+
+  await updateDoc(targetRef, {
+    status: "Deleted"
+  });
+
+  return true;
 };

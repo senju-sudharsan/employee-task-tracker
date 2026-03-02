@@ -1,4 +1,4 @@
-import { db } from "../firebase"; // ✅ THIS LINE WAS MISSING
+import { db } from "../firebase"; 
 import {
   collection,
   getDocs,
@@ -56,3 +56,4 @@ export const getOrganizationById = async (orgId) => {
     ...snap.data()
   };
 };
+

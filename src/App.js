@@ -21,13 +21,10 @@ import UsersPage from "./pages/UsersPage";
 import EmployeeInsightsPage from "./pages/EmployeeInsightsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import DangerZonePage from "./pages/DangerZonePage";
 
-/* ===========================
-   ROLE NORMALIZER
-=========================== */
 function normalizeRole(rawRole) {
   if (!rawRole) return null;
-
   const r = rawRole.toLowerCase().trim();
   if (r === "superadmin" || r === "super_admin") return "super_admin";
   if (r === "admin") return "admin";
@@ -39,8 +36,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
 
-  // 🔒 Portal mode (super | app)
   const PORTAL_MODE = process.env.REACT_APP_PORTAL_MODE;
 
   useEffect(() => {
@@ -56,28 +53,45 @@ function App() {
 
       try {
         const profile = await getUserProfile(firebaseUser.uid);
-        const normalizedRole = normalizeRole(profile.role);
 
-        if (!normalizedRole) {
+        if (profile.status === "Deleted") {
+          setAuthError("Account does not exist.");
           await signOut(auth);
+          setUser(null);
+          setRole(null);
+          setLoading(false);
           return;
         }
 
+        const normalizedRole = normalizeRole(profile.role);
+        if (!normalizedRole) throw new Error("Invalid role");
+
         let orgStatus = "active";
+        let organizationName = null; // stays null if fetch fails — dashboard handles it
 
         if (profile.organizationId) {
           const org = await getOrganizationById(profile.organizationId);
-          if (org?.status) orgStatus = org.status;
+          orgStatus = org?.status || "active";
+          if (org && typeof org.name === "string" && org.name.trim().length > 0) {
+            organizationName = org.name.trim();
+          }
+          // Do NOT fall back to organizationId here — null signals "unknown" to dashboard
         }
+
+        setAuthError("");
 
         setUser({
           uid: firebaseUser.uid,
           ...profile,
-          orgStatus
+          orgStatus,
+          organizationName, // null if org fetch failed, valid string if it succeeded
         });
 
         setRole(normalizedRole);
-      } catch {
+
+      } catch (err) {
+        setUser(null);
+        setRole(null);
         await signOut(auth);
       }
 
@@ -87,30 +101,20 @@ function App() {
     return () => unsub();
   }, []);
 
-  /* ===========================
-     GLOBAL STATE HANDLING
-  =========================== */
-
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
-  if (!user || !role) return <LoginPage />;
 
-  /* ===========================
-     🔐 PORTAL ISOLATION LOGIC
-  =========================== */
+  if (!user || !role) {
+    return <LoginPage authError={authError} />;
+  }
 
-  // Super portal → only super admins allowed
   if (PORTAL_MODE === "super" && role !== "super_admin") {
     return <AccessDeniedPage />;
   }
 
-  // App portal → super admins blocked
   if (PORTAL_MODE === "app" && role === "super_admin") {
     return <AccessDeniedPage />;
   }
 
-  /* ===========================
-     ORG DISABLED CHECK
-  =========================== */
   if (
     role !== "super_admin" &&
     user.organizationId &&
@@ -119,9 +123,6 @@ function App() {
     return <OrganizationDisabledPage />;
   }
 
-  /* ===========================
-     DASHBOARD RESOLVER
-  =========================== */
   const DashboardByRole = () => {
     if (role === "super_admin") {
       return <SuperAdminDashboard currentUser={user} />;
@@ -131,6 +132,7 @@ function App() {
       return (
         <AdminDashboard
           organizationId={user.organizationId}
+          organizationName={user.organizationName} // null if unknown — dashboard fetches it itself
           currentUser={user}
         />
       );
@@ -139,9 +141,6 @@ function App() {
     return <Navigate to="/tasks" replace />;
   };
 
-  /* ===========================
-     ROUTING
-  =========================== */
   return (
     <Layout role={role} onLogout={() => signOut(auth)}>
       <Routes>
@@ -163,12 +162,15 @@ function App() {
           }
         />
 
-        {/* SUPER ADMIN ROUTES */}
         {role === "super_admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />
             <Route path="/users" element={<UsersPage />} />
+            <Route
+              path="/danger"
+              element={<DangerZonePage currentUser={user} />}
+            />
             <Route
               path="/analytics"
               element={
@@ -182,11 +184,15 @@ function App() {
           </>
         )}
 
-        {/* ADMIN ROUTES */}
         {role === "admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/employees" element={<UsersPage />} />
+
+          <Route
+      path="/danger"
+      element={<DangerZonePage currentUser={user} />}
+    />  
             <Route
               path="/analytics"
               element={
@@ -200,7 +206,6 @@ function App() {
           </>
         )}
 
-        {/* EMPLOYEE ROUTES */}
         {role === "employee" && (
           <>
             <Route

@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { initializeFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
@@ -11,9 +11,26 @@ const firebaseConfig = {
   appId: "1:713226827208:web:2eebc29de6353991a6fcfd"
 };
 
+/* ===========================
+   PRIMARY APP (Main session)
+=========================== */
 const app = initializeApp(firebaseConfig);
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
 
 export const auth = getAuth(app);
+
+/* ===========================
+   SECONDARY APP (User creation only)
+=========================== */
+let secondaryApp;
+
+if (!getApps().some(a => a.name === "secondary")) {
+  secondaryApp = initializeApp(firebaseConfig, "secondary");
+} else {
+  secondaryApp = getApps().find(a => a.name === "secondary");
+}
+
+export const secondaryAuth = getAuth(secondaryApp);

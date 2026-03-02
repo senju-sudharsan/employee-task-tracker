@@ -1,16 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
+  signOut,
 } from "firebase/auth";
 import { auth } from "../firebase";
+import { getUserProfile } from "../services/authService";
 
-const BG_ABSTRACT = "/auth/auth-bg-abstract.svg";
-const ILLUSTRATION = "/auth/auth-illustration-login.svg";
-const LOGIN_ICON = "/auth/login.svg";
-const FORGOT_ICON = "/auth/forgot-password.svg";
 
-function LoginPage({ onLoginSuccess }) {
+const BG_ABSTRACT   = "/auth/auth-bg-abstract.svg";
+const ILLUSTRATION  = "/auth/auth-illustration-login.svg";
+const LOGIN_ICON    = "/auth/login.svg";
+const FORGOT_ICON   = "/auth/forgot-password.svg";
+
+
+function LoginPage({ onLoginSuccess, authError }) {
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,29 +23,69 @@ function LoginPage({ onLoginSuccess }) {
   const [mode, setMode] = useState("login");
   const [success, setSuccess] = useState("");
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setError("Email and password are required");
-      return;
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+    }
+  }, [authError]);
+
+  /* ===========================
+     LOGIN HANDLER
+  =========================== */
+ const handleLogin = async (e) => {
+  e.preventDefault();
+
+  if (!email || !password) {
+    setError("Email and password are required");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError("");
+
+    const { collection, query, where, getDocs } = await import("firebase/firestore");
+    const { db } = await import("../firebase");
+
+    const q = query(
+      collection(db, "users"),
+      where("email", "==", email)
+    );
+
+    const snap = await getDocs(q);
+
+    // If profile exists → check status
+    if (!snap.empty) {
+      const profile = snap.docs[0].data();
+
+      if (profile.status === "Deleted") {
+        setError("Account does not exist.");
+        return;
+      }
     }
 
-    try {
-      setLoading(true);
-      setError("");
-      const res = await signInWithEmailAndPassword(auth, email, password);
-      onLoginSuccess(res.user.uid);
-    } catch (err) {
-      let msg = "Login failed. Please try again.";
-      if (err.code === "auth/user-not-found") msg = "Account not found.";
-      if (err.code === "auth/wrong-password") msg = "Incorrect password.";
-      if (err.code === "auth/invalid-credential") msg = "Invalid email or password.";
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Always let Firebase Auth validate credentials
+    const res = await signInWithEmailAndPassword(auth, email, password);
+    onLoginSuccess(res.user.uid);
 
+  } catch (err) {
+    if (err.code === "auth/user-not-found") {
+      setError("Account does not exist.");
+    }
+    else if (err.code === "auth/wrong-password") {
+      setError("Incorrect password.");
+    }
+    else {
+      setError("Login failed. Please try again.");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
+  /* ===========================
+     RESET HANDLER
+  =========================== */
   const handleReset = async (e) => {
     e.preventDefault();
     if (!email) {
@@ -60,26 +105,24 @@ function LoginPage({ onLoginSuccess }) {
     }
   };
 
+  /* ── "account does not exist" is the only error that gets special treatment ── */
+  const isAccountMissing = error === "Account does not exist.";
+
   return (
     <div style={styles.page}>
       {/* Ambient background layers */}
       <div style={styles.gradientMesh} />
-      
-      {/* SVG Background elements - layered and composed */}
+
+      {/* SVG Background elements */}
       <div style={styles.bgComposition}>
-        <img src={BG_ABSTRACT} alt="" style={styles.bgAbstract} />
-        <img 
-          src={mode === "login" ? ILLUSTRATION : ILLUSTRATION} 
-          alt="" 
-          style={styles.bgIllustration} 
-          key={mode}
-        />
+        <img src={BG_ABSTRACT}  alt="" style={styles.bgAbstract}     />
+        <img src={ILLUSTRATION} alt="" style={styles.bgIllustration} key={mode} />
       </div>
 
       {/* Floating ambient orbs */}
-      <div style={styles.orbLeft} className="orb-drift" />
+      <div style={styles.orbLeft}  className="orb-drift"     />
       <div style={styles.orbRight} className="orb-drift-alt" />
-      
+
       <div style={styles.container}>
         {/* Brand Header */}
         <div style={styles.brandHeader} className="brand-enter">
@@ -90,8 +133,21 @@ function LoginPage({ onLoginSuccess }) {
           <p style={styles.brandTagline}>Enterprise workflow automation</p>
         </div>
 
-        {/* Main card */}
-        <div style={styles.card} className="card-enter">
+        {/* ─────────────────────────────────────────────────────────
+            Main card
+            — adds `card-shake` + `card-account-missing` classes
+              ONLY when error === "Account does not exist."
+        ───────────────────────────────────────────────────────── */}
+        <div
+          style={styles.card}
+          className={[
+            "card-enter",
+            isAccountMissing ? "card-shake"           : "",
+            isAccountMissing ? "card-account-missing" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {/* Mode indicator */}
           <div style={styles.modeIndicator}>
             <div style={styles.iconCircle} className="icon-breathe">
@@ -113,7 +169,7 @@ function LoginPage({ onLoginSuccess }) {
                 : "Enter your email address and we'll send you a secure reset link"}
             </p>
 
-            <form 
+            <form
               onSubmit={mode === "login" ? handleLogin : handleReset}
               style={styles.form}
             >
@@ -141,7 +197,7 @@ function LoginPage({ onLoginSuccess }) {
                 </div>
               </div>
 
-              {/* Password field - only for login */}
+              {/* Password field — login only */}
               {mode === "login" && (
                 <div style={styles.fieldGroup} className="field-appear-2">
                   <label style={styles.label} htmlFor="password">
@@ -166,12 +222,25 @@ function LoginPage({ onLoginSuccess }) {
                 </div>
               )}
 
-              {/* Error message */}
+              {/* Error message
+                  — adds `message-error-intense` class when account is missing
+                    so the border gets a touch more red without changing structure */}
               {error && (
-                <div style={styles.messageBox} className="message-error">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <div
+                  style={styles.messageBox}
+                  className={[
+                    "message-error",
+                    isAccountMissing ? "message-error-intense" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <svg
+                    width="20" height="20" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  >
                     <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="8"  x2="12"    y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
                   </svg>
                   <span>{error}</span>
@@ -181,7 +250,10 @@ function LoginPage({ onLoginSuccess }) {
               {/* Success message */}
               {success && (
                 <div style={styles.messageBox} className="message-success">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <svg
+                    width="20" height="20" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  >
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                     <polyline points="22 4 12 14.01 9 11.01" />
                   </svg>
@@ -190,26 +262,25 @@ function LoginPage({ onLoginSuccess }) {
               )}
 
               {/* Submit button */}
-              <button 
-                type="submit" 
-                disabled={loading} 
+              <button
+                type="submit"
+                disabled={loading}
                 style={styles.submitButton}
                 className="submit-btn"
               >
                 <span style={styles.buttonText}>
-                  {loading ? "Please wait" : (mode === "login" ? "Sign in" : "Send reset link")}
+                  {loading
+                    ? "Please wait"
+                    : mode === "login"
+                      ? "Sign in"
+                      : "Send reset link"}
                 </span>
                 {loading ? (
                   <div style={styles.loader} className="spinner" />
                 ) : (
-                  <svg 
-                    width="20" 
-                    height="20" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="2.5" 
-                    strokeLinecap="round"
+                  <svg
+                    width="20" height="20" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
                     style={styles.buttonArrow}
                     className="btn-arrow"
                   >
@@ -243,6 +314,9 @@ function LoginPage({ onLoginSuccess }) {
   );
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Styles — unchanged from original
+───────────────────────────────────────────────────────────── */
 const styles = {
   page: {
     minHeight: "100vh",
@@ -250,10 +324,7 @@ const styles = {
     width: "100%",
     height: "100%",
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     overflow: "auto",
     background: "linear-gradient(135deg, #FFF8F0 0%, #FFF5E9 50%, #FFEFD5 100%)",
     fontFamily: "'Poppins', sans-serif",
@@ -261,12 +332,8 @@ const styles = {
 
   gradientMesh: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: "100%",
-    height: "100%",
+    top: 0, left: 0, right: 0, bottom: 0,
+    width: "100%", height: "100%",
     background: `
       radial-gradient(circle at 20% 30%, rgba(255, 154, 73, 0.12) 0%, transparent 50%),
       radial-gradient(circle at 80% 70%, rgba(255, 122, 47, 0.08) 0%, transparent 50%),
@@ -277,12 +344,8 @@ const styles = {
 
   bgComposition: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: "100%",
-    height: "100%",
+    top: 0, left: 0, right: 0, bottom: 0,
+    width: "100%", height: "100%",
     overflow: "hidden",
     pointerEvents: "none",
   },
@@ -314,10 +377,8 @@ const styles = {
 
   orbLeft: {
     position: "fixed",
-    top: "15%",
-    left: "10%",
-    width: "500px",
-    height: "500px",
+    top: "15%", left: "10%",
+    width: "500px", height: "500px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(255, 154, 73, 0.15) 0%, rgba(255, 154, 73, 0) 70%)",
     filter: "blur(80px)",
@@ -326,10 +387,8 @@ const styles = {
 
   orbRight: {
     position: "fixed",
-    bottom: "10%",
-    right: "15%",
-    width: "600px",
-    height: "600px",
+    bottom: "10%", right: "15%",
+    width: "600px", height: "600px",
     borderRadius: "50%",
     background: "radial-gradient(circle, rgba(255, 122, 47, 0.12) 0%, rgba(255, 122, 47, 0) 70%)",
     filter: "blur(90px)",
@@ -357,8 +416,7 @@ const styles = {
   },
 
   logoMark: {
-    width: "64px",
-    height: "64px",
+    width: "64px", height: "64px",
     borderRadius: "16px",
     background: "linear-gradient(135deg, #FF9A49 0%, #FF7A2F 100%)",
     display: "flex",
@@ -408,6 +466,8 @@ const styles = {
       inset 0 1px 0 rgba(255, 255, 255, 0.6)
     `,
     overflow: "hidden",
+    /* transition lets the red glow fade in/out smoothly */
+    transition: "box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
   },
 
   modeIndicator: {
@@ -417,8 +477,7 @@ const styles = {
   },
 
   iconCircle: {
-    width: "80px",
-    height: "80px",
+    width: "80px", height: "80px",
     borderRadius: "50%",
     background: "linear-gradient(135deg, #FFF8F0 0%, #FFEFD5 100%)",
     border: "2px solid rgba(255, 154, 73, 0.2)",
@@ -430,8 +489,7 @@ const styles = {
   },
 
   modeIcon: {
-    width: "38px",
-    height: "38px",
+    width: "38px", height: "38px",
   },
 
   cardContent: {
@@ -498,10 +556,8 @@ const styles = {
 
   inputUnderline: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    width: "0%",
-    height: "2px",
+    bottom: 0, left: 0,
+    width: "0%", height: "2px",
     background: "linear-gradient(90deg, #FF9A49 0%, #FF7A2F 100%)",
     transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
   },
@@ -540,19 +596,11 @@ const styles = {
     overflow: "hidden",
   },
 
-  buttonText: {
-    position: "relative",
-    zIndex: 2,
-  },
-
-  buttonArrow: {
-    position: "relative",
-    zIndex: 2,
-  },
+  buttonText:  { position: "relative", zIndex: 2 },
+  buttonArrow: { position: "relative", zIndex: 2 },
 
   loader: {
-    width: "20px",
-    height: "20px",
+    width: "20px", height: "20px",
     border: "2.5px solid rgba(255, 255, 255, 0.3)",
     borderTopColor: "#FFFFFF",
     borderRadius: "50%",
@@ -578,6 +626,9 @@ const styles = {
   },
 };
 
+/* ─────────────────────────────────────────────────────────────
+   CSS injection — original styles preserved, new rules appended
+───────────────────────────────────────────────────────────── */
 if (typeof document !== "undefined") {
   const style = document.createElement("style");
   style.innerHTML = `
@@ -592,57 +643,29 @@ if (typeof document !== "undefined") {
     }
 
     @keyframes floatAbstract {
-      0%, 100% { 
-        transform: translateY(-50%) translateX(0) rotate(0deg) scale(1); 
-      }
-      25% { 
-        transform: translateY(-48%) translateX(40px) rotate(3deg) scale(1.05); 
-      }
-      50% { 
-        transform: translateY(-52%) translateX(-30px) rotate(-2deg) scale(0.98); 
-      }
-      75% { 
-        transform: translateY(-49%) translateX(50px) rotate(4deg) scale(1.02); 
-      }
+      0%, 100% { transform: translateY(-50%) translateX(0) rotate(0deg) scale(1); }
+      25%       { transform: translateY(-48%) translateX(40px) rotate(3deg) scale(1.05); }
+      50%       { transform: translateY(-52%) translateX(-30px) rotate(-2deg) scale(0.98); }
+      75%       { transform: translateY(-49%) translateX(50px) rotate(4deg) scale(1.02); }
     }
 
     @keyframes floatIllustration {
-      0%, 100% { 
-        transform: translateY(0) translateX(0) rotate(0deg) scale(1); 
-      }
-      30% { 
-        transform: translateY(-40px) translateX(-35px) rotate(-3deg) scale(1.04); 
-      }
-      60% { 
-        transform: translateY(30px) translateX(45px) rotate(2deg) scale(0.97); 
-      }
-      85% { 
-        transform: translateY(-20px) translateX(-25px) rotate(-2deg) scale(1.01); 
-      }
+      0%, 100% { transform: translateY(0) translateX(0) rotate(0deg) scale(1); }
+      30%       { transform: translateY(-40px) translateX(-35px) rotate(-3deg) scale(1.04); }
+      60%       { transform: translateY(30px) translateX(45px) rotate(2deg) scale(0.97); }
+      85%       { transform: translateY(-20px) translateX(-25px) rotate(-2deg) scale(1.01); }
     }
 
     @keyframes orb-drift {
-      0%, 100% {
-        transform: translate(0, 0) scale(1);
-      }
-      33% {
-        transform: translate(60px, -50px) scale(1.15);
-      }
-      66% {
-        transform: translate(-40px, 60px) scale(0.95);
-      }
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%       { transform: translate(60px, -50px) scale(1.15); }
+      66%       { transform: translate(-40px, 60px) scale(0.95); }
     }
 
     @keyframes orb-drift-alt {
-      0%, 100% {
-        transform: translate(0, 0) scale(1);
-      }
-      40% {
-        transform: translate(-70px, 50px) scale(1.1);
-      }
-      70% {
-        transform: translate(50px, -40px) scale(0.92);
-      }
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      40%       { transform: translate(-70px, 50px) scale(1.1); }
+      70%       { transform: translate(50px, -40px) scale(0.92); }
     }
 
     @keyframes breathe {
@@ -657,49 +680,23 @@ if (typeof document !== "undefined") {
     }
 
     @keyframes brand-enter {
-      from {
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes card-enter {
-      from {
-        opacity: 0;
-        transform: translateY(30px) scale(0.96);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-      }
+      from { opacity: 0; transform: translateY(30px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     @keyframes field-appear {
-      from {
-        opacity: 0;
-        transform: translateY(15px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(15px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes message-slide {
-      from {
-        opacity: 0;
-        transform: translateY(-10px);
-        max-height: 0;
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-        max-height: 100px;
-      }
+      from { opacity: 0; transform: translateY(-10px); max-height: 0; }
+      to   { opacity: 1; transform: translateY(0);     max-height: 100px; }
     }
 
     @keyframes spin {
@@ -707,38 +704,66 @@ if (typeof document !== "undefined") {
     }
 
     @keyframes shimmer {
-      0% { transform: translateX(-100%) rotate(45deg); }
-      100% { transform: translateX(200%) rotate(45deg); }
+      0%   { transform: translateX(-100%) rotate(45deg); }
+      100% { transform: translateX(200%)  rotate(45deg); }
     }
 
-    .orb-drift {
-      animation: orb-drift 25s ease-in-out infinite;
+    /* ── NEW: subtle horizontal shake for "account does not exist" ── */
+    @keyframes card-shake {
+      0%   { transform: translateX(0); }
+      15%  { transform: translateX(-6px); }
+      30%  { transform: translateX(5px); }
+      45%  { transform: translateX(-4px); }
+      60%  { transform: translateX(3px); }
+      75%  { transform: translateX(-2px); }
+      90%  { transform: translateX(1px); }
+      100% { transform: translateX(0); }
     }
 
-    .orb-drift-alt {
-      animation: orb-drift-alt 30s ease-in-out infinite;
+    /* ─────────────────────────────────
+       Existing animation class hooks
+    ───────────────────────────────── */
+    .orb-drift     { animation: orb-drift     25s ease-in-out infinite; }
+    .orb-drift-alt { animation: orb-drift-alt 30s ease-in-out infinite; }
+    .icon-breathe  { animation: breathe        4s ease-in-out infinite; }
+    .brand-enter   { animation: brand-enter   0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s backwards; }
+    .card-enter    { animation: card-enter    0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.4s backwards; }
+    .field-appear-1 { animation: field-appear 0.7s cubic-bezier(0.4, 0, 0.2, 1) 0.6s backwards; }
+    .field-appear-2 { animation: field-appear 0.7s cubic-bezier(0.4, 0, 0.2, 1) 0.7s backwards; }
+
+    /* ─────────────────────────────────
+       NEW: account-missing card states
+    ───────────────────────────────── */
+
+    /* Shake fires once when the class is applied */
+    .card-shake {
+      animation:
+        card-enter  0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.4s backwards,
+        card-shake  0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
     }
 
-    .icon-breathe {
-      animation: breathe 4s ease-in-out infinite;
+    /* Persistent soft red glow while error is visible */
+    .card-account-missing {
+      box-shadow:
+        0 24px 64px rgba(255, 122, 47, 0.12),
+        0  8px 24px rgba(0,   0,   0,  0.04),
+        0  0   0   1px rgba(239, 68, 68, 0.22),
+        0  0  28px     rgba(239, 68, 68, 0.14),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6);
     }
 
-    .brand-enter {
-      animation: brand-enter 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.2s backwards;
+    /* ─────────────────────────────────
+       NEW: intensified error box border
+       — only when paired with .message-error-intense
+    ───────────────────────────────── */
+    .message-error-intense {
+      border-color: rgba(239, 68, 68, 0.42) !important;
+      background: linear-gradient(135deg, #FFF0F0 0%, #FFE5E5) !important;
     }
 
-    .card-enter {
-      animation: card-enter 0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.4s backwards;
-    }
-
-    .field-appear-1 {
-      animation: field-appear 0.7s cubic-bezier(0.4, 0, 0.2, 1) 0.6s backwards;
-    }
-
-    .field-appear-2 {
-      animation: field-appear 0.7s cubic-bezier(0.4, 0, 0.2, 1) 0.7s backwards;
-    }
-
+    /* ─────────────────────────────────
+       Existing message / input styles
+    ───────────────────────────────── */
     .auth-input::placeholder {
       color: #C4A68A;
       font-style: italic;
@@ -769,77 +794,45 @@ if (typeof document !== "undefined") {
     .submit-btn::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: -100%;
-      width: 50%;
-      height: 100%;
+      top: 0; left: -100%;
+      width: 50%; height: 100%;
       background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
       transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
-    .submit-btn:hover::before {
-      left: 150%;
-    }
+    .submit-btn:hover::before { left: 150%; }
 
     .submit-btn:hover:not(:disabled) {
       transform: translateY(-2px);
       box-shadow: 0 12px 32px rgba(255, 122, 47, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.4);
     }
+    .submit-btn:active:not(:disabled) { transform: translateY(0); }
+    .submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
-    .submit-btn:active:not(:disabled) {
-      transform: translateY(0);
-    }
+    .btn-arrow { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    .submit-btn:hover:not(:disabled) .btn-arrow { transform: translateX(4px); }
 
-    .submit-btn:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
-    }
+    .spinner { animation: spin 0.7s linear infinite; }
 
-    .btn-arrow {
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .submit-btn:hover:not(:disabled) .btn-arrow {
-      transform: translateX(4px);
-    }
-
-    .spinner {
-      animation: spin 0.7s linear infinite;
-    }
-
-    .toggle-btn {
-      position: relative;
-    }
-
+    .toggle-btn { position: relative; }
     .toggle-btn::after {
       content: '';
       position: absolute;
-      bottom: 0;
-      left: 50%;
+      bottom: 0; left: 50%;
       transform: translateX(-50%);
-      width: 0;
-      height: 2px;
+      width: 0; height: 2px;
       background: linear-gradient(90deg, #FF9A49 0%, #FF7A2F 100%);
       transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
-
-    .toggle-btn:hover::after {
-      width: 100%;
-    }
-
+    .toggle-btn:hover::after { width: 100%; }
     .toggle-btn:hover {
       background: rgba(255, 154, 73, 0.08);
       color: #E65C00;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     @media (max-width: 640px) {
-      .brand-enter {
-        padding: 0 16px;
-      }
+      .brand-enter { padding: 0 16px; }
     }
   `;
   document.head.appendChild(style);
