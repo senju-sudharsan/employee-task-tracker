@@ -9,8 +9,6 @@ import {
   Loader2,
   ChevronDown,
   X,
-  Calendar,
-  ArrowUpRight,
   Filter,
 } from "lucide-react";
 import {
