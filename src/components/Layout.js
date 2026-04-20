@@ -17,21 +17,26 @@ function Layout({ children, role, onLogout }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navByRole = {
-    super_admin: [
-      { name: "Dashboard",      path: "/dashboard",     icon: LayoutDashboard },
-      { name: "Organizations",  path: "/organizations", icon: Building2 },
-      { name: "Users",          path: "/users",         icon: Users }
-    ],
-    admin: [
-      { name: "Dashboard",  path: "/dashboard", icon: LayoutDashboard },
-      { name: "Tasks",      path: "/tasks",     icon: ClipboardList },
-      { name: "Employees",  path: "/employees", icon: Users }
-    ],
-    employee: [
-      { name: "Tasks",    path: "/tasks",    icon: ClipboardList },
-      { name: "Insights", path: "/insights", icon: BarChart3 }
-    ]
-  };
+  super_admin: [
+    { name: "Dashboard",      path: "/dashboard",     icon: LayoutDashboard },
+    { name: "Organizations",  path: "/organizations", icon: Building2 },
+    { name: "Users",          path: "/users",         icon: Users },
+    
+  ],
+
+  admin: [
+    { name: "Dashboard",   path: "/dashboard", icon: LayoutDashboard },
+    { name: "Tasks",       path: "/tasks",     icon: ClipboardList },
+    { name: "Employees",   path: "/employees", icon: Users },
+    { name: "Task Monitor", path: "/employee-task-viewer", icon: ClipboardList }
+  
+  ],
+
+  employee: [
+    { name: "Tasks",    path: "/tasks",    icon: ClipboardList },
+    { name: "Insights", path: "/insights", icon: BarChart3 }
+  ]
+};
 
   const navItems = navByRole[role] || [];
   const showDangerZone = role === "super_admin" || role === "admin";

@@ -22,7 +22,11 @@ import EmployeeInsightsPage from "./pages/EmployeeInsightsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import DangerZonePage from "./pages/DangerZonePage";
+import EmployeeTaskViewer from "./pages/EmployeeTaskViewer";
 
+/* =====================
+   ROLE NORMALIZER
+===================== */
 function normalizeRole(rawRole) {
   if (!rawRole) return null;
   const r = rawRole.toLowerCase().trim();
@@ -40,6 +44,9 @@ function App() {
 
   const PORTAL_MODE = process.env.REACT_APP_PORTAL_MODE;
 
+  /* =====================
+     AUTH FLOW
+  ===================== */
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
@@ -54,6 +61,7 @@ function App() {
       try {
         const profile = await getUserProfile(firebaseUser.uid);
 
+        /* deleted user block */
         if (profile.status === "Deleted") {
           setAuthError("Account does not exist.");
           await signOut(auth);
@@ -67,29 +75,31 @@ function App() {
         if (!normalizedRole) throw new Error("Invalid role");
 
         let orgStatus = "active";
-        let organizationName = null; // stays null if fetch fails — dashboard handles it
+        let organizationName = null;
 
+        /* fetch org */
         if (profile.organizationId) {
           const org = await getOrganizationById(profile.organizationId);
+
           orgStatus = org?.status || "active";
-          if (org && typeof org.name === "string" && org.name.trim().length > 0) {
+
+          if (org?.name && typeof org.name === "string") {
             organizationName = org.name.trim();
           }
-          // Do NOT fall back to organizationId here — null signals "unknown" to dashboard
         }
-
-        setAuthError("");
 
         setUser({
           uid: firebaseUser.uid,
           ...profile,
           orgStatus,
-          organizationName, // null if org fetch failed, valid string if it succeeded
+          organizationName,
         });
 
         setRole(normalizedRole);
+        setAuthError("");
 
       } catch (err) {
+        console.error("Auth error:", err);
         setUser(null);
         setRole(null);
         await signOut(auth);
@@ -101,6 +111,9 @@ function App() {
     return () => unsub();
   }, []);
 
+  /* =====================
+     GUARDS
+  ===================== */
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
 
   if (!user || !role) {
@@ -123,6 +136,9 @@ function App() {
     return <OrganizationDisabledPage />;
   }
 
+  /* =====================
+     DASHBOARD ROUTING
+  ===================== */
   const DashboardByRole = () => {
     if (role === "super_admin") {
       return <SuperAdminDashboard currentUser={user} />;
@@ -132,7 +148,7 @@ function App() {
       return (
         <AdminDashboard
           organizationId={user.organizationId}
-          organizationName={user.organizationName} // null if unknown — dashboard fetches it itself
+          organizationName={user.organizationName}
           currentUser={user}
         />
       );
@@ -141,9 +157,14 @@ function App() {
     return <Navigate to="/tasks" replace />;
   };
 
+  /* =====================
+     APP ROUTES
+  ===================== */
   return (
     <Layout role={role} onLogout={() => signOut(auth)}>
       <Routes>
+
+        {/* ROOT */}
         <Route
           path="/"
           element={
@@ -153,6 +174,7 @@ function App() {
           }
         />
 
+        {/* DASHBOARD */}
         <Route
           path="/dashboard"
           element={
@@ -162,15 +184,14 @@ function App() {
           }
         />
 
+        {/* SUPER ADMIN */}
         {role === "super_admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/organizations" element={<OrganizationsPage />} />
             <Route path="/users" element={<UsersPage />} />
-            <Route
-              path="/danger"
-              element={<DangerZonePage currentUser={user} />}
-            />
+            <Route path="/danger" element={<DangerZonePage currentUser={user} />} />
+            <Route path="/test-tasks" element={<EmployeeTaskViewer currentUser={user} />} />
             <Route
               path="/analytics"
               element={
@@ -184,15 +205,13 @@ function App() {
           </>
         )}
 
+        {/* ADMIN */}
         {role === "admin" && (
           <>
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/employees" element={<UsersPage />} />
-
-          <Route
-      path="/danger"
-      element={<DangerZonePage currentUser={user} />}
-    />  
+            <Route path="/danger" element={<DangerZonePage currentUser={user} />} />
+            <Route path="/test-tasks" element={<EmployeeTaskViewer currentUser={user} />} />
             <Route
               path="/analytics"
               element={
@@ -206,6 +225,7 @@ function App() {
           </>
         )}
 
+        {/* EMPLOYEE */}
         {role === "employee" && (
           <>
             <Route
@@ -216,8 +236,10 @@ function App() {
           </>
         )}
 
+        {/* COMMON */}
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+
       </Routes>
     </Layout>
   );
