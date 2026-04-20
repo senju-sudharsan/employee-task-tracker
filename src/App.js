@@ -191,7 +191,7 @@ function App() {
             <Route path="/organizations" element={<OrganizationsPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/danger" element={<DangerZonePage currentUser={user} />} />
-            <Route path="/test-tasks" element={<EmployeeTaskViewer currentUser={user} />} />
+            
             <Route
               path="/analytics"
               element={
@@ -211,7 +211,7 @@ function App() {
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/employees" element={<UsersPage />} />
             <Route path="/danger" element={<DangerZonePage currentUser={user} />} />
-            <Route path="/test-tasks" element={<EmployeeTaskViewer currentUser={user} />} />
+            <Route path="/employee-task-viewer" element={<EmployeeTaskViewer currentUser={user} />} />
             <Route
               path="/analytics"
               element={
